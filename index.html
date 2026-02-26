@@ -178,6 +178,10 @@
           <input type="tel" id="sellPhone" placeholder="(555) 000-0000" autocomplete="tel">
         </div>
         <div class="field-group">
+          <label for="sellLocation">Location (City, State) *</label>
+          <input type="text" id="sellLocation" placeholder="e.g. Baltimore, MD" autocomplete="address-level2">
+        </div>
+        <div class="field-group">
           <label for="sellEmail">Your Email Address *</label>
           <input type="email" id="sellEmail" placeholder="you@example.com" autocomplete="email">
         </div>
@@ -270,7 +274,8 @@ document.addEventListener('DOMContentLoaded', function() {
     var phone   = document.getElementById('sellPhone').value.trim();
     var email   = document.getElementById('sellEmail').value.trim();
     var desc    = document.getElementById('sellDescription').value.trim();
-    var contact = document.getElementById('sellContactMethod').value;
+    var contact  = document.getElementById('sellContactMethod').value;
+    var location = document.getElementById('sellLocation').value.trim();
     var btn     = document.getElementById('sellSubmitBtn');
 
     if (!name) {
@@ -288,6 +293,11 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('sellDescription').focus();
       return;
     }
+    if (!location) {
+      alert('Please enter your city and state.');
+      document.getElementById('sellLocation').focus();
+      return;
+    }
     if (!contact) {
       alert('Please select your preferred contact method.');
       document.getElementById('sellContactMethod').focus();
@@ -302,7 +312,8 @@ document.addEventListener('DOMContentLoaded', function() {
       phone:           phone || 'Not provided',
       submitter_email: email,
       message:         desc,
-      contact_method:  contact
+      contact_method:  contact,
+      location:        location || 'Not provided'
     }).then(function() {
       btn.innerHTML = 'Sent! DaBirddy will be in touch soon.';
       btn.style.background = '#16a34a';
@@ -311,6 +322,7 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('sellEmail').value = '';
       document.getElementById('sellDescription').value = '';
       document.getElementById('sellContactMethod').selectedIndex = 0;
+      document.getElementById('sellLocation').value = '';
       setTimeout(function() {
         btn.disabled = false;
         btn.style.background = '';
