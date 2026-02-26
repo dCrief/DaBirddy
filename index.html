@@ -88,6 +88,17 @@
     @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
     @keyframes spin { to{transform:rotate(360deg)} }
     svg { width: 20px; height: 20px; fill: #fff; }
+    .confirmation-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: center; justify-content: center; padding: 24px; }
+    .confirmation-overlay.show { display: flex; animation: fadeIn 0.25s ease; }
+    .confirmation-box { background: var(--surface2); border: 1px solid rgba(74,222,128,0.3); border-radius: 20px; padding: 36px 28px; max-width: 400px; width: 100%; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 16px; animation: popIn 0.3s ease; }
+    .confirmation-icon { width: 64px; height: 64px; background: linear-gradient(135deg,#4ade80,#16a34a); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+    .confirmation-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; letter-spacing: 2px; color: var(--accent3); }
+    .confirmation-msg { font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
+    .confirmation-msg strong { color: var(--text); }
+    .confirmation-close { margin-top: 8px; padding: 12px 32px; background: linear-gradient(135deg,#4ade80,#16a34a); border: none; border-radius: 12px; color: #fff; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+    .confirmation-close:hover { opacity: 0.85; }
+    @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+    @keyframes popIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
     .honeypot { opacity: 0; position: absolute; top: 0; left: 0; height: 0; width: 0; z-index: -1; }
   </style>
 </head>
@@ -250,6 +261,16 @@
 
 </div>
 
+<!-- Confirmation Overlay -->
+<div class="confirmation-overlay" id="confirmationOverlay">
+  <div class="confirmation-box">
+    <div class="confirmation-icon">&#x2705;</div>
+    <div class="confirmation-title">Message Sent!</div>
+    <p class="confirmation-msg">Thanks <strong id="confirmName"></strong>! DaBirddy received your info and will reach out via <strong id="confirmContact"></strong> soon.<br><br>A copy has been sent to <strong id="confirmEmail"></strong>.</p>
+    <button class="confirmation-close" id="confirmationClose">Sounds Good!</button>
+  </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 
@@ -268,6 +289,14 @@ document.addEventListener('DOMContentLoaded', function() {
     var isOpen = container.classList.toggle('open');
     arrow.classList.toggle('open', isOpen);
   }
+
+  document.getElementById('confirmationClose').addEventListener('click', function() {
+    document.getElementById('confirmationOverlay').classList.remove('show');
+  });
+
+  document.getElementById('confirmationOverlay').addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('show');
+  });
 
   document.getElementById('sellToggle').addEventListener('click', function() {
     toggleExpand('sellContainer', 'sellArrow');
@@ -349,8 +378,10 @@ document.addEventListener('DOMContentLoaded', function() {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.success) {
-        btn.innerHTML = 'Sent! DaBirddy will be in touch soon.';
-        btn.style.background = '#16a34a';
+        // Reset button
+        btn.disabled = false;
+        btn.innerHTML = 'Send My Info to DaBirddy';
+        // Clear form
         document.getElementById('sellName').value = '';
         document.getElementById('sellPhone').value = '';
         document.getElementById('sellEmail').value = '';
@@ -358,11 +389,11 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('sellLocation').value = '';
         document.getElementById('sellContactMethod').selectedIndex = 0;
         document.getElementById('honeypot').value = '';
-        setTimeout(function() {
-          btn.disabled = false;
-          btn.style.background = '';
-          btn.innerHTML = 'Send My Info to DaBirddy';
-        }, 6000);
+        // Show confirmation overlay
+        document.getElementById('confirmName').textContent = name;
+        document.getElementById('confirmContact').textContent = contact;
+        document.getElementById('confirmEmail').textContent = email;
+        document.getElementById('confirmationOverlay').classList.add('show');
       } else {
         throw new Error(data.message || 'Submission failed');
       }
