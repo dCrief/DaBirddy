@@ -376,7 +376,7 @@
     <div class="icon">
       <svg viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.5 16.5h-8l5-6H7.5V8.5h8l-5 6h7v2z"/></svg>
     </div>
-    <span class="btn-label">Pay me via Zelle<span class="btn-sub">d@crief.com</span></span>
+    <span class="btn-label">Pay me via Zelle<span class="btn-sub"><span class="__cf_email__" data-cfemail="bdd9fddecfd4d8db93ded2d0">[email&#160;protected]</span></span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
@@ -491,7 +491,7 @@
 </div>
 
 <!-- EmailJS SDK -->
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script>
 (function () {
   'use strict';
@@ -555,7 +555,7 @@
     btn.disabled = true;
     btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;animation:spin 0.8s linear infinite"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" opacity=".25"/><path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8z"/></svg>&nbsp;Sending...';
 
-    emailjs.send('service_7q5ee5f', 'template_cdmznoq', {
+    emailjs.send('service_gjrx79c', 'template_cdmznoq', {
       from_name:       name,
       phone:           phone || 'Not provided',
       submitter_email: email,
@@ -581,12 +581,4 @@
       // Error
       console.error('EmailJS error:', err);
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 2z"/></svg>&nbsp;Send My Info to DaBirddy';
-      alert('Something went wrong sending your message. Please try again or reach out via Discord.');
-    });
-  });
-
-}());
-</script>
-</body>
-</html>
+      btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 
