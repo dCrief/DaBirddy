@@ -254,6 +254,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
   emailjs.init('RLy4oYNAfERcoHu_y');
 
+  // Auto-expand sell form if URL hash is #sell
+  if (window.location.hash === '#sell') {
+    document.getElementById('sellContainer').classList.add('open');
+    document.getElementById('sellArrow').classList.add('open');
+    setTimeout(function() {
+      document.getElementById('sellContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
+
   function toggleExpand(containerId, arrowId) {
     var container = document.getElementById(containerId);
     var arrow = document.getElementById(arrowId);
