@@ -16,408 +16,175 @@
   <link rel="icon" type="image/jpeg" href="logo.jpg">
   <link rel="apple-touch-icon" href="logo.jpg">
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg: #0d0d0f;
-      --surface: #1a1a1f;
-      --surface2: #222228;
-      --accent: #ff4d6d;
-      --accent2: #ffd166;
-      --accent3: #4ade80;
-      --text: #f0ede8;
-      --muted: #888;
-      --radius: 16px;
+      --bg: #0d0d0f; --surface: #1a1a1f; --surface2: #222228;
+      --accent: #ff4d6d; --accent2: #ffd166; --accent3: #4ade80;
+      --text: #f0ede8; --muted: #888; --radius: 16px;
     }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      padding: 40px 16px 80px;
-    }
-
-    .container {
-      width: 100%;
-      max-width: 480px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-
-    /* ── Profile ── */
-    .profile {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 16px;
-      animation: fadeUp 0.5s ease both;
-    }
-    .avatar {
-      width: 110px;
-      height: 110px;
-      border-radius: 18px;
-      overflow: hidden;
-      box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px rgba(220,30,40,0.7), 0 8px 30px rgba(0,0,0,0.5);
-    }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; justify-content: center; padding: 40px 16px 80px; }
+    .container { width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .profile { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 16px; animation: fadeUp 0.5s ease both; }
+    .avatar { width: 110px; height: 110px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px rgba(220,30,40,0.7), 0 8px 30px rgba(0,0,0,0.5); }
     .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .profile h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2rem; letter-spacing: 2px; }
     .profile p { font-size: 0.85rem; color: var(--muted); text-align: center; max-width: 300px; line-height: 1.5; }
-
-    /* ── Link Buttons ── */
-    .link-btn {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 16px 20px;
-      background: var(--surface);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 0.95rem;
-      font-weight: 500;
-      text-decoration: none;
-      cursor: pointer;
-      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-      animation: fadeUp 0.5s ease both;
-      position: relative;
-      overflow: hidden;
-    }
-    .link-btn::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.03));
-      opacity: 0;
-      transition: opacity 0.2s;
-      pointer-events: none;
-    }
+    .link-btn { width: 100%; display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: var(--surface); border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 500; text-decoration: none; cursor: pointer; transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; animation: fadeUp 0.5s ease both; position: relative; overflow: hidden; }
+    .link-btn::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.03)); opacity: 0; transition: opacity 0.2s; pointer-events: none; }
     .link-btn:hover::before { opacity: 1; }
     .link-btn:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.15); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
     .link-btn:active { transform: translateY(0); }
-
-    .icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      pointer-events: none;
-    }
+    .icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; pointer-events: none; }
     .btn-label { flex: 1; text-align: left; pointer-events: none; }
     .btn-sub { font-size: 0.75rem; color: var(--muted); display: block; font-weight: 400; }
-    .arrow { color: var(--muted); font-size: 1rem; transition: transform 0.2s; pointer-events: none; }
+    .arrow { color: var(--muted); font-size: 1rem; transition: transform 0.3s; pointer-events: none; }
     .link-btn:hover .arrow { transform: translateX(3px); }
-
-    /* ── Icon colors ── */
-    .discord .icon    { background: #5865F2; }
-    .instagram .icon  { background: linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); }
-    .tiktok .icon     { background: #010101; border: 1px solid #333; }
-    .whatnot .icon    { background: #7B2FFF; }
+    .arrow.open { transform: rotate(90deg) !important; }
+    .discord .icon { background: #5865F2; }
+    .instagram .icon { background: linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); }
+    .tiktok .icon { background: #010101; border: 1px solid #333; }
+    .whatnot .icon { background: #7B2FFF; }
     .whatnot-ref .icon { background: linear-gradient(135deg,#7B2FFF,#ff4d6d); }
-    .whatnot-ref      { border-color: rgba(255,77,109,0.25); }
-    .whatnot-ref .badge {
-      background: var(--accent);
-      color: #fff;
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 20px;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      flex-shrink: 0;
-      pointer-events: none;
-    }
-    .venmo .icon  { background: #3D95CE; }
+    .whatnot-ref { border-color: rgba(255,77,109,0.25); }
+    .whatnot-ref .badge { background: var(--accent); color: #fff; font-size: 0.65rem; font-weight: 700; padding: 2px 7px; border-radius: 20px; letter-spacing: 0.5px; text-transform: uppercase; flex-shrink: 0; pointer-events: none; }
+    .venmo .icon { background: #3D95CE; }
     .paypal .icon { background: #003087; }
-    .zelle .icon  { background: #6D1ED4; }
-
-    /* ── Expandable toggle buttons ── */
+    .zelle .icon { background: #6D1ED4; }
     .expand-btn { border-color: rgba(255,209,102,0.2); }
-    .expand-btn .icon { background: linear-gradient(135deg, var(--accent2), #ff9f43); }
-
+    .expand-btn .icon { background: linear-gradient(135deg,var(--accent2),#ff9f43); }
     .sell-btn { border-color: rgba(74,222,128,0.25); }
-    .sell-btn .icon { background: linear-gradient(135deg, #4ade80, #16a34a); }
-
-    /* ── Expand containers ── */
-    .expand-container {
-      width: 100%;
-      display: grid;
-      grid-template-rows: 0fr;
-      transition: grid-template-rows 0.35s ease;
-    }
+    .sell-btn .icon { background: linear-gradient(135deg,#4ade80,#16a34a); }
+    .expand-container { width: 100%; display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.35s ease; }
     .expand-container.open { grid-template-rows: 1fr; }
     .expand-inner { overflow: hidden; }
-
-    /* ── Card Shows ── */
     .shows-list { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; }
-    .show-card {
-      background: var(--surface2);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: var(--radius);
-      padding: 14px 18px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-    .show-date {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      background: var(--accent);
-      border-radius: 10px;
-      padding: 6px 10px;
-      min-width: 48px;
-      flex-shrink: 0;
-    }
+    .show-card { background: var(--surface2); border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius); padding: 14px 18px; display: flex; align-items: center; gap: 14px; }
+    .show-date { display: flex; flex-direction: column; align-items: center; background: var(--accent); border-radius: 10px; padding: 6px 10px; min-width: 48px; flex-shrink: 0; }
     .show-date .month { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; color: #fff; }
-    .show-date .day   { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: #fff; line-height: 1; }
+    .show-date .day { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: #fff; line-height: 1; }
     .show-info { flex: 1; }
-    .show-name     { font-weight: 600; font-size: 0.9rem; }
+    .show-name { font-weight: 600; font-size: 0.9rem; }
     .show-location { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
-    .show-tag {
-      font-size: 0.65rem;
-      padding: 3px 8px;
-      border-radius: 20px;
-      background: rgba(255,209,102,0.1);
-      color: var(--accent2);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      flex-shrink: 0;
-    }
-
-    /* ── Sell Form ── */
-    .sell-form {
-      background: var(--surface2);
-      border: 1px solid rgba(74,222,128,0.15);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-top: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .sell-form-title    { font-family: 'Bebas Neue', sans-serif; font-size: 1.2rem; letter-spacing: 1.5px; color: var(--accent3); }
+    .show-tag { font-size: 0.65rem; padding: 3px 8px; border-radius: 20px; background: rgba(255,209,102,0.1); color: var(--accent2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
+    .sell-form { background: var(--surface2); border: 1px solid rgba(74,222,128,0.15); border-radius: var(--radius); padding: 20px; margin-top: 8px; display: flex; flex-direction: column; gap: 14px; }
+    .sell-form-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.2rem; letter-spacing: 1.5px; color: var(--accent3); }
     .sell-form-subtitle { font-size: 0.78rem; color: var(--muted); line-height: 1.5; margin-top: -8px; }
-
     .field-group { display: flex; flex-direction: column; gap: 6px; }
     .field-group label { font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
-
-    .field-group input,
-    .field-group textarea,
-    .field-group select {
-      background: var(--bg);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 10px;
-      padding: 12px 14px;
-      color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 0.9rem;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      width: 100%;
-    }
+    .field-group input, .field-group textarea, .field-group select { background: var(--bg); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 14px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.9rem; outline: none; transition: border-color 0.2s, box-shadow 0.2s; width: 100%; }
     .field-group textarea { resize: none; }
-    .field-group select {
-      cursor: pointer;
-      appearance: none;
-      -webkit-appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='%23888'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-      background-color: var(--bg);
-    }
-    .field-group input:focus,
-    .field-group textarea:focus,
-    .field-group select:focus { border-color: rgba(74,222,128,0.5); box-shadow: 0 0 0 3px rgba(74,222,128,0.08); }
-    .field-group input::placeholder,
-    .field-group textarea::placeholder { color: #444; }
+    .field-group select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='%23888'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; background-color: var(--bg); }
+    .field-group input:focus, .field-group textarea:focus, .field-group select:focus { border-color: rgba(74,222,128,0.5); box-shadow: 0 0 0 3px rgba(74,222,128,0.08); }
+    .field-group input::placeholder, .field-group textarea::placeholder { color: #444; }
     .field-group select option { background: #1a1a1f; color: var(--text); }
-
-    .sell-submit {
-      width: 100%;
-      padding: 14px;
-      background: linear-gradient(135deg, #4ade80, #16a34a);
-      border: none;
-      border-radius: 12px;
-      color: #fff;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: opacity 0.2s, transform 0.15s;
-    }
+    .sell-submit { width: 100%; padding: 14px; background: linear-gradient(135deg,#4ade80,#16a34a); border: none; border-radius: 12px; color: #fff; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s, transform 0.15s; }
     .sell-submit:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
     .sell-submit:active { transform: translateY(0); }
     .sell-submit:disabled { cursor: not-allowed; opacity: 0.75; }
-
     .sell-note { font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.5; }
-
-    /* ── Misc ── */
     .divider { width: 100%; height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
-
-    .delay-1 { animation-delay: 0.05s; }
-    .delay-2 { animation-delay: 0.10s; }
-    .delay-3 { animation-delay: 0.15s; }
-    .delay-4 { animation-delay: 0.20s; }
-    .delay-5 { animation-delay: 0.25s; }
-    .delay-6 { animation-delay: 0.30s; }
-    .delay-7 { animation-delay: 0.35s; }
-    .delay-8 { animation-delay: 0.40s; }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(16px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
+    .delay-1{animation-delay:.05s}.delay-2{animation-delay:.10s}.delay-3{animation-delay:.15s}.delay-4{animation-delay:.20s}.delay-5{animation-delay:.25s}.delay-6{animation-delay:.30s}.delay-7{animation-delay:.35s}.delay-8{animation-delay:.40s}
+    @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes spin { to{transform:rotate(360deg)} }
     svg { width: 20px; height: 20px; fill: #fff; }
   </style>
 </head>
 <body>
 <div class="container">
 
-  <!-- Profile -->
   <div class="profile">
     <div class="avatar">
-      <img src="logo.jpg" alt="DaBirddy Logo"
-           onerror="this.parentElement.style.background='linear-gradient(135deg,#ff4d6d,#ffd166)';this.style.display='none'">
+      <img src="logo.jpg" alt="DaBirddy Logo" onerror="this.parentElement.style.background='linear-gradient(135deg,#ff4d6d,#ffd166)';this.style.display='none'">
     </div>
     <h1>DaBirddy</h1>
     <p>Card show vendor &middot; Collector &middot; Pokemon enthusiast</p>
   </div>
 
-  <!-- Discord -->
   <a href="https://discord.gg/hkrHEWjZQA" target="_blank" rel="noopener" class="link-btn discord delay-1">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg></div>
     <span class="btn-label">Join DaBirddy's Discord<span class="btn-sub">Pokemon discussions, trading, card repair</span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
-  <!-- Whatnot -->
   <a href="https://www.whatnot.com/user/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot delay-2">
     <div class="icon" style="background:#7B2FFF;overflow:hidden;padding:6px;">
-      <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/whatnot.svg" alt="Whatnot"
-           style="width:100%;height:100%;object-fit:contain;pointer-events:none;"
-           onerror="this.style.display='none';this.parentElement.insertAdjacentHTML('beforeend','<span style=&quot;color:#fff;font-weight:700;font-size:16px;&quot;>W</span>')">
+      <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/whatnot.svg" alt="Whatnot" style="width:100%;height:100%;object-fit:contain;pointer-events:none;" onerror="this.style.display='none'">
     </div>
     <span class="btn-label">Whatnot &mdash; Live Every Tuesday Night<span class="btn-sub">Vintage Pokemon, Givvy's and Grails</span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
-  <!-- Whatnot Referral -->
   <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-3">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg></div>
     <span class="btn-label">Get $15 FREE on Whatnot<span class="btn-sub">Use my referral &mdash; new users only</span></span>
     <span class="badge">$15 FREE</span>
   </a>
 
   <div class="divider"></div>
 
-  <!-- Instagram -->
   <a href="https://instagram.com/dabirddygaming" target="_blank" rel="noopener" class="link-btn instagram delay-4">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg></div>
     <span class="btn-label">Instagram<span class="btn-sub">@DaBirddyGaming</span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
-  <!-- TikTok -->
   <a href="https://tiktok.com/@dabirddy0" target="_blank" rel="noopener" class="link-btn tiktok delay-5">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.78 1.52V6.75a4.85 4.85 0 0 1-1.01-.06z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.78 1.52V6.75a4.85 4.85 0 0 1-1.01-.06z"/></svg></div>
     <span class="btn-label">TikTok<span class="btn-sub">@DaBirddy0</span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
   <div class="divider"></div>
 
-  <!-- Venmo -->
   <a href="https://venmo.com/dabirddy" target="_blank" rel="noopener" class="link-btn venmo delay-6">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M19.4 2c.6 1 .9 2.1.9 3.5 0 4.4-3.7 10.1-6.7 14.1H6.9L4 2.9l5.8-.6 1.6 12.8c1.5-2.4 3.3-6.2 3.3-8.8 0-1.4-.2-2.4-.6-3.3L19.4 2z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M19.4 2c.6 1 .9 2.1.9 3.5 0 4.4-3.7 10.1-6.7 14.1H6.9L4 2.9l5.8-.6 1.6 12.8c1.5-2.4 3.3-6.2 3.3-8.8 0-1.4-.2-2.4-.6-3.3L19.4 2z"/></svg></div>
     <span class="btn-label">Pay me on Venmo<span class="btn-sub">@dabirddy</span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
-  <!-- PayPal -->
   <a href="https://paypal.me/davidmoncrief1" target="_blank" rel="noopener" class="link-btn paypal delay-7">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 0 0-.607-.541c-.013.076-.026.175-.041.254-.59 3.025-2.566 6.243-8.558 6.243H9.82l-1.35 8.566h3.535l.845-5.356h2.19c4.27 0 7.6-1.74 8.58-6.755.37-1.88.13-3.372-.398-4.411z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 0 0-.607-.541c-.013.076-.026.175-.041.254-.59 3.025-2.566 6.243-8.558 6.243H9.82l-1.35 8.566h3.535l.845-5.356h2.19c4.27 0 7.6-1.74 8.58-6.755.37-1.88.13-3.372-.398-4.411z"/></svg></div>
     <span class="btn-label">Pay me on PayPal<span class="btn-sub">paypal.me/davidmoncrief1</span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
-  <!-- Zelle -->
   <a href="https://enroll.zellepay.com/qr-codes" target="_blank" rel="noopener" class="link-btn zelle delay-7">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.5 16.5h-8l5-6H7.5V8.5h8l-5 6h7v2z"/></svg>
-    </div>
-    <span class="btn-label">Pay me via Zelle<span class="btn-sub"><span class="__cf_email__" data-cfemail="bdd9fddecfd4d8db93ded2d0">[email&#160;protected]</span></span></span>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.5 16.5h-8l5-6H7.5V8.5h8l-5 6h7v2z"/></svg></div>
+    <span class="btn-label">Pay me via Zelle<span class="btn-sub">d@crief.com</span></span>
     <span class="arrow">&#8250;</span>
   </a>
 
   <div class="divider"></div>
 
-  <!-- Sell Button -->
   <button type="button" class="link-btn sell-btn delay-8" id="sellToggle">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg></div>
     <span class="btn-label">Sell DaBirddy Your Pokemon Cards<span class="btn-sub">Describe your collection &mdash; get a response fast</span></span>
     <span class="arrow" id="sellArrow">&#8250;</span>
   </button>
 
-  <!-- Sell Form (expandable) -->
   <div class="expand-container" id="sellContainer">
     <div class="expand-inner">
       <div class="sell-form">
         <div class="sell-form-title">&#128176; Sell Your Collection</div>
         <p class="sell-form-subtitle">Fill out the form and hit send &mdash; DaBirddy gets your info instantly, and you'll receive a copy too.</p>
-
         <div class="field-group">
           <label for="sellName">Your Name *</label>
           <input type="text" id="sellName" placeholder="First and last name" autocomplete="name">
         </div>
-
         <div class="field-group">
           <label for="sellPhone">Phone Number</label>
           <input type="tel" id="sellPhone" placeholder="(555) 000-0000" autocomplete="tel">
         </div>
-
         <div class="field-group">
           <label for="sellEmail">Your Email Address *</label>
           <input type="email" id="sellEmail" placeholder="you@example.com" autocomplete="email">
         </div>
-
         <div class="field-group">
           <label for="sellDescription">Describe Your Cards / Collection *</label>
           <textarea id="sellDescription" rows="5" placeholder="Tell me about what you have — sets, condition, quantity, any graded cards, asking price, etc."></textarea>
         </div>
-
         <div class="field-group">
           <label for="sellContactMethod">Preferred Contact Method *</label>
           <select id="sellContactMethod">
@@ -428,14 +195,10 @@
             <option value="Discord">Discord</option>
           </select>
         </div>
-
         <button type="button" class="sell-submit" id="sellSubmitBtn">
-          <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;">
-            <path d="M2 21L23 12 2 3v7l15 2-15 2z"/>
-          </svg>
+          <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 2z"/></svg>
           Send My Info to DaBirddy
         </button>
-
         <p class="sell-note">Your info goes directly to DaBirddy. A copy is also sent to the email address you provide.</p>
       </div>
     </div>
@@ -443,20 +206,15 @@
 
   <div class="divider"></div>
 
-  <!-- Card Shows Button -->
   <button type="button" class="link-btn expand-btn delay-8" id="showsToggle">
-    <div class="icon">
-      <svg viewBox="0 0 24 24"><path d="M20 4H4C2.89 4 2 4.89 2 6V18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V6C22 4.89 21.11 4 20 4ZM20 18H4V8L12 13L20 8V18ZM12 11L4 6H20L12 11Z"/></svg>
-    </div>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M20 4H4C2.89 4 2 4.89 2 6V18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V6C22 4.89 21.11 4 20 4ZM20 18H4V8L12 13L20 8V18ZM12 11L4 6H20L12 11Z"/></svg></div>
     <span class="btn-label">Upcoming Card Shows<span class="btn-sub">See where I'm vending next</span></span>
     <span class="arrow" id="showsArrow">&#8250;</span>
   </button>
 
-  <!-- Shows List (expandable) -->
   <div class="expand-container" id="showsContainer">
     <div class="expand-inner">
       <div class="shows-list">
-
         <div class="show-card">
           <div class="show-date"><span class="month">Mar</span><span class="day">14</span></div>
           <div class="show-info">
@@ -465,7 +223,6 @@
           </div>
           <span class="show-tag">Vending</span>
         </div>
-
         <div class="show-card">
           <div class="show-date"><span class="month">Mar</span><span class="day">15</span></div>
           <div class="show-info">
@@ -474,7 +231,6 @@
           </div>
           <span class="show-tag">Vending</span>
         </div>
-
         <div class="show-card">
           <div class="show-date"><span class="month">Apr</span><span class="day">12</span></div>
           <div class="show-info">
@@ -483,45 +239,33 @@
           </div>
           <span class="show-tag">Vending</span>
         </div>
-
       </div>
     </div>
   </div>
 
 </div>
 
-<!-- EmailJS SDK -->
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script>
-(function () {
-  'use strict';
+document.addEventListener('DOMContentLoaded', function() {
 
-  // ── Init EmailJS ──────────────────────────────────
   emailjs.init('RLy4oYNAfERcoHu_y');
 
-  // ── Toggle helpers ────────────────────────────────
   function toggleExpand(containerId, arrowId) {
     var container = document.getElementById(containerId);
-    var arrow     = document.getElementById(arrowId);
-    var isOpen    = container.classList.toggle('open');
-    arrow.style.transform = isOpen ? 'rotate(90deg)' : '';
-    if (isOpen) {
-      setTimeout(function () {
-        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 360);
-    }
+    var arrow = document.getElementById(arrowId);
+    var isOpen = container.classList.toggle('open');
+    arrow.classList.toggle('open', isOpen);
   }
 
-  document.getElementById('sellToggle').addEventListener('click', function () {
+  document.getElementById('sellToggle').addEventListener('click', function() {
     toggleExpand('sellContainer', 'sellArrow');
   });
 
-  document.getElementById('showsToggle').addEventListener('click', function () {
+  document.getElementById('showsToggle').addEventListener('click', function() {
     toggleExpand('showsContainer', 'showsArrow');
   });
 
-  // ── Sell Form Submit ──────────────────────────────
-  document.getElementById('sellSubmitBtn').addEventListener('click', function () {
+  document.getElementById('sellSubmitBtn').addEventListener('click', function() {
     var name    = document.getElementById('sellName').value.trim();
     var phone   = document.getElementById('sellPhone').value.trim();
     var email   = document.getElementById('sellEmail').value.trim();
@@ -529,7 +273,6 @@
     var contact = document.getElementById('sellContactMethod').value;
     var btn     = document.getElementById('sellSubmitBtn');
 
-    // Validation
     if (!name) {
       alert('Please enter your name.');
       document.getElementById('sellName').focus();
@@ -551,9 +294,8 @@
       return;
     }
 
-    // Loading state
     btn.disabled = true;
-    btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;animation:spin 0.8s linear infinite"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" opacity=".25"/><path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8z"/></svg>&nbsp;Sending...';
+    btn.innerHTML = 'Sending...';
 
     emailjs.send('service_gjrx79c', 'template_cdmznoq', {
       from_name:       name,
@@ -561,24 +303,28 @@
       submitter_email: email,
       message:         desc,
       contact_method:  contact
-    }).then(function () {
-      // Success
-      btn.innerHTML = '&#x2705; Sent! DaBirddy will be in touch soon.';
+    }).then(function() {
+      btn.innerHTML = 'Sent! DaBirddy will be in touch soon.';
       btn.style.background = '#16a34a';
       document.getElementById('sellName').value = '';
       document.getElementById('sellPhone').value = '';
       document.getElementById('sellEmail').value = '';
       document.getElementById('sellDescription').value = '';
       document.getElementById('sellContactMethod').selectedIndex = 0;
-
-      setTimeout(function () {
+      setTimeout(function() {
         btn.disabled = false;
         btn.style.background = '';
-        btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 2z"/></svg>&nbsp;Send My Info to DaBirddy';
+        btn.innerHTML = 'Send My Info to DaBirddy';
       }, 6000);
-
-    }, function (err) {
-      // Error
+    }, function(err) {
       console.error('EmailJS error:', err);
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 
+      btn.innerHTML = 'Send My Info to DaBirddy';
+      alert('Something went wrong sending your message. Please try again or reach out via Discord.');
+    });
+  });
+
+});
+</script>
+</body>
+</html>
