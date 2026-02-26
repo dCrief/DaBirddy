@@ -16,7 +16,6 @@
   <link rel="icon" type="image/jpeg" href="logo.jpg">
   <link rel="apple-touch-icon" href="logo.jpg">
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -89,6 +88,7 @@
     @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
     @keyframes spin { to{transform:rotate(360deg)} }
     svg { width: 20px; height: 20px; fill: #fff; }
+    .honeypot { opacity: 0; position: absolute; top: 0; left: 0; height: 0; width: 0; z-index: -1; }
   </style>
 </head>
 <body>
@@ -199,6 +199,7 @@
             <option value="Discord">Discord</option>
           </select>
         </div>
+        <input class="honeypot" type="text" id="honeypot" name="honeypot" tabindex="-1" autocomplete="off">
         <button type="button" class="sell-submit" id="sellSubmitBtn">
           <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 2z"/></svg>
           Send My Info to DaBirddy
@@ -252,8 +253,6 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 
-  emailjs.init('RLy4oYNAfERcoHu_y');
-
   // Auto-expand sell form if URL hash is #sell
   if (window.location.hash === '#sell') {
     document.getElementById('sellContainer').classList.add('open');
@@ -283,9 +282,15 @@ document.addEventListener('DOMContentLoaded', function() {
     var phone   = document.getElementById('sellPhone').value.trim();
     var email   = document.getElementById('sellEmail').value.trim();
     var desc    = document.getElementById('sellDescription').value.trim();
-    var contact  = document.getElementById('sellContactMethod').value;
+    var contact = document.getElementById('sellContactMethod').value;
     var location = document.getElementById('sellLocation').value.trim();
     var btn     = document.getElementById('sellSubmitBtn');
+
+    // Honeypot check
+    if (document.getElementById('honeypot').value !== '') {
+      btn.innerHTML = 'Sent! DaBirddy will be in touch soon.';
+      return;
+    }
 
     if (!name) {
       alert('Please enter your name.');
@@ -316,29 +321,54 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.disabled = true;
     btn.innerHTML = 'Sending...';
 
-    emailjs.send('service_gjrx79c', 'template_cdmznoq', {
-      from_name:       name,
-      phone:           phone || 'Not provided',
-      submitter_email: email,
-      message:         desc,
-      contact_method:  contact,
-      location:        location || 'Not provided'
-    }).then(function() {
-      btn.innerHTML = 'Sent! DaBirddy will be in touch soon.';
-      btn.style.background = '#16a34a';
-      document.getElementById('sellName').value = '';
-      document.getElementById('sellPhone').value = '';
-      document.getElementById('sellEmail').value = '';
-      document.getElementById('sellDescription').value = '';
-      document.getElementById('sellContactMethod').selectedIndex = 0;
-      document.getElementById('sellLocation').value = '';
-      setTimeout(function() {
-        btn.disabled = false;
-        btn.style.background = '';
-        btn.innerHTML = 'Send My Info to DaBirddy';
-      }, 6000);
-    }, function(err) {
-      console.error('EmailJS error:', err);
+    var body = [
+      'Name: ' + name,
+      'Phone: ' + (phone || 'Not provided'),
+      'Email: ' + email,
+      'Location: ' + location,
+      'Preferred Contact: ' + contact,
+      '',
+      'Collection Description:',
+      desc
+    ].join('\n');
+
+    fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        access_key:    '4c131804-871f-4284-8c7d-f0db7de78707',
+        subject:       'Buy my Pokemon Cards - ' + name,
+        from_name:     name,
+        replyto:       email,
+        to:            'D@crief.com',
+        cc:            email,
+        message:       body,
+        botcheck:      document.getElementById('honeypot').value
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        btn.innerHTML = 'Sent! DaBirddy will be in touch soon.';
+        btn.style.background = '#16a34a';
+        document.getElementById('sellName').value = '';
+        document.getElementById('sellPhone').value = '';
+        document.getElementById('sellEmail').value = '';
+        document.getElementById('sellDescription').value = '';
+        document.getElementById('sellLocation').value = '';
+        document.getElementById('sellContactMethod').selectedIndex = 0;
+        document.getElementById('honeypot').value = '';
+        setTimeout(function() {
+          btn.disabled = false;
+          btn.style.background = '';
+          btn.innerHTML = 'Send My Info to DaBirddy';
+        }, 6000);
+      } else {
+        throw new Error(data.message || 'Submission failed');
+      }
+    })
+    .catch(function(err) {
+      console.error('Web3Forms error:', err);
       btn.disabled = false;
       btn.innerHTML = 'Send My Info to DaBirddy';
       alert('Something went wrong sending your message. Please try again or reach out via Discord.');
