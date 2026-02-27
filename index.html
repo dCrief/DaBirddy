@@ -231,6 +231,7 @@
   <div class="expand-container" id="showsContainer">
     <div class="expand-inner">
       <div class="shows-list">
+
         <div class="show-card">
           <div class="show-date"><span class="month">Mar</span><span class="day">14</span></div>
           <div class="show-info">
@@ -239,6 +240,7 @@
           </div>
           <span class="show-tag">Vending</span>
         </div>
+
         <div class="show-card">
           <div class="show-date"><span class="month">Mar</span><span class="day">15</span></div>
           <div class="show-info">
@@ -247,13 +249,17 @@
           </div>
           <span class="show-tag">Vending</span>
         </div>
+
         <div class="show-card">
           <div class="show-date"><span class="month">Apr</span><span class="day">11</span></div>
           <div class="show-info">
             <div class="show-name">The Best Flippin' TCG Card Show Baltimore</div>
             <div class="show-location">&#128205; Baltimore Convention Center</div>
           </div>
-          <div class="show-card">
+          <span class="show-tag">Vending</span>
+        </div>
+
+        <div class="show-card">
           <div class="show-date"><span class="month">Apr</span><span class="day">12</span></div>
           <div class="show-info">
             <div class="show-name">The Best Flippin' TCG Card Show Baltimore</div>
@@ -261,6 +267,7 @@
           </div>
           <span class="show-tag">Vending</span>
         </div>
+
       </div>
     </div>
   </div>
@@ -280,7 +287,6 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 
-  // Auto-expand sell form if URL hash is #sell
   if (window.location.hash === '#sell') {
     document.getElementById('sellContainer').classList.add('open');
     document.getElementById('sellArrow').classList.add('open');
@@ -313,45 +319,23 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   document.getElementById('sellSubmitBtn').addEventListener('click', function() {
-    var name    = document.getElementById('sellName').value.trim();
-    var phone   = document.getElementById('sellPhone').value.trim();
-    var email   = document.getElementById('sellEmail').value.trim();
-    var desc    = document.getElementById('sellDescription').value.trim();
-    var contact = document.getElementById('sellContactMethod').value;
+    var name     = document.getElementById('sellName').value.trim();
+    var phone    = document.getElementById('sellPhone').value.trim();
+    var email    = document.getElementById('sellEmail').value.trim();
+    var desc     = document.getElementById('sellDescription').value.trim();
+    var contact  = document.getElementById('sellContactMethod').value;
     var location = document.getElementById('sellLocation').value.trim();
-    var btn     = document.getElementById('sellSubmitBtn');
+    var btn      = document.getElementById('sellSubmitBtn');
 
-    // Honeypot check
     if (document.getElementById('honeypot').value !== '') {
       btn.innerHTML = 'Sent! DaBirddy will be in touch soon.';
       return;
     }
-
-    if (!name) {
-      alert('Please enter your name.');
-      document.getElementById('sellName').focus();
-      return;
-    }
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      alert('Please enter a valid email address so DaBirddy can reply to you.');
-      document.getElementById('sellEmail').focus();
-      return;
-    }
-    if (!desc) {
-      alert('Please describe your cards or collection.');
-      document.getElementById('sellDescription').focus();
-      return;
-    }
-    if (!location) {
-      alert('Please enter your city and state.');
-      document.getElementById('sellLocation').focus();
-      return;
-    }
-    if (!contact) {
-      alert('Please select your preferred contact method.');
-      document.getElementById('sellContactMethod').focus();
-      return;
-    }
+    if (!name) { alert('Please enter your name.'); document.getElementById('sellName').focus(); return; }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('Please enter a valid email address so DaBirddy can reply to you.'); document.getElementById('sellEmail').focus(); return; }
+    if (!desc) { alert('Please describe your cards or collection.'); document.getElementById('sellDescription').focus(); return; }
+    if (!location) { alert('Please enter your city and state.'); document.getElementById('sellLocation').focus(); return; }
+    if (!contact) { alert('Please select your preferred contact method.'); document.getElementById('sellContactMethod').focus(); return; }
 
     btn.disabled = true;
     btn.innerHTML = 'Sending...';
@@ -371,23 +355,21 @@ document.addEventListener('DOMContentLoaded', function() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
-        access_key:    '4c131804-871f-4284-8c7d-f0db7de78707',
-        subject:       'Buy my Pokemon Cards - ' + name,
-        from_name:     name,
-        replyto:       email,
-        to:            'D@crief.com',
-        cc:            email,
-        message:       body,
-        botcheck:      document.getElementById('honeypot').value
+        access_key: '4c131804-871f-4284-8c7d-f0db7de78707',
+        subject:    'Buy my Pokemon Cards - ' + name,
+        from_name:  name,
+        replyto:    email,
+        to:         'D@crief.com',
+        cc:         email,
+        message:    body,
+        botcheck:   document.getElementById('honeypot').value
       })
     })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.success) {
-        // Reset button
         btn.disabled = false;
         btn.innerHTML = 'Send My Info to DaBirddy';
-        // Clear form
         document.getElementById('sellName').value = '';
         document.getElementById('sellPhone').value = '';
         document.getElementById('sellEmail').value = '';
@@ -395,7 +377,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('sellLocation').value = '';
         document.getElementById('sellContactMethod').selectedIndex = 0;
         document.getElementById('honeypot').value = '';
-        // Show confirmation overlay
         document.getElementById('confirmName').textContent = name;
         document.getElementById('confirmContact').textContent = contact;
         document.getElementById('confirmEmail').textContent = email;
