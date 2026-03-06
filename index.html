@@ -23,8 +23,120 @@
       --accent: #ff4d6d; --accent2: #ffd166; --accent3: #4ade80;
       --text: #f0ede8; --muted: #888; --radius: 16px;
     }
-    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; justify-content: center; padding: 40px 16px 80px; }
-    .container { width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 0 80px; }
+
+    /* ── Project H Countdown Banner ── */
+    .countdown-banner {
+      width: 100%;
+      background: linear-gradient(135deg, #0a0a0c 0%, #1a0a20 50%, #0a0a0c 100%);
+      border-bottom: 1px solid rgba(180, 50, 255, 0.3);
+      padding: 14px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+    .countdown-banner::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, rgba(160, 40, 255, 0.18) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .countdown-banner::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(180, 50, 255, 0.6), rgba(255, 77, 109, 0.6), transparent);
+    }
+    .countdown-label {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 0.85rem;
+      letter-spacing: 4px;
+      color: rgba(200, 120, 255, 0.9);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .countdown-label::before,
+    .countdown-label::after {
+      content: '';
+      display: block;
+      width: 24px;
+      height: 1px;
+      background: rgba(180, 50, 255, 0.5);
+    }
+    .countdown-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.6rem;
+      letter-spacing: 5px;
+      background: linear-gradient(90deg, #c060ff, #ff4d6d, #ffd166);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer 4s ease-in-out infinite;
+      background-size: 200% auto;
+    }
+    @keyframes shimmer {
+      0% { background-position: 0% center; }
+      50% { background-position: 100% center; }
+      100% { background-position: 0% center; }
+    }
+    .countdown-units {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .countdown-unit {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+    .countdown-num {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.2rem;
+      line-height: 1;
+      color: #fff;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(180, 50, 255, 0.25);
+      border-radius: 8px;
+      padding: 6px 12px;
+      min-width: 58px;
+      text-align: center;
+      transition: color 0.3s;
+      text-shadow: 0 0 20px rgba(180, 50, 255, 0.4);
+    }
+    .countdown-unit-label {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .countdown-sep {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.8rem;
+      color: rgba(180, 50, 255, 0.4);
+      margin-bottom: 16px;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    .countdown-expired {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.4rem;
+      letter-spacing: 3px;
+      color: var(--accent3);
+      text-shadow: 0 0 20px rgba(74,222,128,0.5);
+    }
+
+    .container { width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px 16px 0; }
     .profile { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 16px; animation: fadeUp 0.5s ease both; }
     .avatar { width: 110px; height: 110px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px rgba(220,30,40,0.7), 0 8px 30px rgba(0,0,0,0.5); }
     .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -103,6 +215,34 @@
   </style>
 </head>
 <body>
+
+  <!-- Project H Countdown Banner -->
+  <div class="countdown-banner" id="countdownBanner">
+    <div class="countdown-label">Countdown To</div>
+    <div class="countdown-title">Project H</div>
+    <div class="countdown-units" id="countdownUnits">
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cdDays">--</div>
+        <div class="countdown-unit-label">Days</div>
+      </div>
+      <div class="countdown-sep">:</div>
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cdHours">--</div>
+        <div class="countdown-unit-label">Hours</div>
+      </div>
+      <div class="countdown-sep">:</div>
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cdMins">--</div>
+        <div class="countdown-unit-label">Mins</div>
+      </div>
+      <div class="countdown-sep">:</div>
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cdSecs">--</div>
+        <div class="countdown-unit-label">Secs</div>
+      </div>
+    </div>
+  </div>
+
 <div class="container">
 
   <div class="profile">
@@ -287,6 +427,42 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 
+  // ── Project H Countdown ──
+  // Target: September 27, 2026 at 9:26 AM Eastern Time
+  function getTargetTime() {
+    // Use a date string that unambiguously targets Eastern time
+    // EST = UTC-5, EDT = UTC-4 (September is EDT, so UTC-4)
+    // Sep 27 2026 9:26 AM EDT = Sep 27 2026 13:26:00 UTC
+    return new Date('2026-09-27T13:26:00Z');
+  }
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function updateCountdown() {
+    var target = getTargetTime();
+    var now = new Date();
+    var diff = target - now;
+
+    if (diff <= 0) {
+      document.getElementById('countdownUnits').innerHTML = '<div class="countdown-expired">&#x1F389; It\'s Here!</div>';
+      return;
+    }
+
+    var days    = Math.floor(diff / (1000 * 60 * 60 * 24));
+    var hours   = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    var seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+    document.getElementById('cdDays').textContent  = pad(days);
+    document.getElementById('cdHours').textContent = pad(hours);
+    document.getElementById('cdMins').textContent  = pad(minutes);
+    document.getElementById('cdSecs').textContent  = pad(seconds);
+  }
+
+  updateCountdown();
+  setInterval(updateCountdown, 1000);
+
+  // ── Rest of page logic ──
   if (window.location.hash === '#sell') {
     document.getElementById('sellContainer').classList.add('open');
     document.getElementById('sellArrow').classList.add('open');
