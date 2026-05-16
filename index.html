@@ -212,6 +212,7 @@
     @keyframes fadeIn { from{opacity:0} to{opacity:1} }
     @keyframes popIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
     .honeypot { opacity: 0; position: absolute; top: 0; left: 0; height: 0; width: 0; z-index: -1; }
+    .live-dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; background: #ff4d6d; border-radius: 50%; box-shadow: 0 0 6px #ff4d6d; animation: blink 1s step-end infinite; }
   </style>
 </head>
 <body>
@@ -253,6 +254,33 @@
     <p>Card show vendor &middot; Collector &middot; Pokemon enthusiast</p>
   </div>
 
+  <!-- Giveaway Announcement -->
+  <div style="width:100%;background:linear-gradient(135deg,#1a0030,#2d0050,#1a0030);border:2px solid rgba(255,77,109,0.6);border-radius:16px;padding:18px 20px;text-align:center;position:relative;overflow:hidden;animation:fadeUp 0.4s ease both;">
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(255,77,109,0.15) 0%,transparent 70%);pointer-events:none;"></div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:0.75rem;letter-spacing:4px;color:rgba(255,180,200,0.8);margin-bottom:6px;">&#x1F389; CELEBRATING 5,000 FOLLOWERS &#x1F389;</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.7rem;letter-spacing:3px;background:linear-gradient(90deg,#ff4d6d,#ffd166,#ff4d6d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;background-size:200% auto;animation:shimmer 3s ease-in-out infinite;line-height:1.15;">FREE POKEMON PACKS<br>EVERY MINUTE</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:2px;color:#ffd166;margin-top:6px;">MAY 19 &bull; 9:17 PM EST</div>
+  </div>
+
+  <!-- Live Stream Button -->
+  <a href="https://www.whatnot.com/s/BlFt7Snt" target="_blank" rel="noopener" class="link-btn delay-1" style="border-color:rgba(255,77,109,0.5);background:linear-gradient(135deg,rgba(123,47,255,0.25),rgba(255,77,109,0.2));">
+    <div class="icon" style="background:linear-gradient(135deg,#ff4d6d,#7B2FFF);position:relative;">
+      <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      <span class="live-dot"></span>
+    </div>
+    <span class="btn-label" style="font-weight:700;">&#x1F534; Watch the Live Giveaway Stream<span class="btn-sub">Join now on Whatnot &mdash; packs dropping every minute</span></span>
+    <span class="arrow">&#8250;</span>
+  </a>
+
+  <!-- Referral (moved to top) -->
+  <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-2">
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg></div>
+    <span class="btn-label">Get $15 FREE on Whatnot<span class="btn-sub">&#x1F449; Click here first if you don't have a Whatnot account</span></span>
+    <span class="badge">$15 FREE</span>
+  </a>
+
+  <div class="divider"></div>
+
   <a href="https://discord.gg/hkrHEWjZQA" target="_blank" rel="noopener" class="link-btn discord delay-1">
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg></div>
     <span class="btn-label">Join DaBirddy's Discord<span class="btn-sub">Pokemon discussions, trading, card repair</span></span>
@@ -265,12 +293,6 @@
     </div>
     <span class="btn-label">Whatnot &mdash; Live Every Tuesday Night<span class="btn-sub">Vintage Pokemon, Givvy's and Grails</span></span>
     <span class="arrow">&#8250;</span>
-  </a>
-
-  <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-3">
-    <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg></div>
-    <span class="btn-label">Get $15 FREE on Whatnot<span class="btn-sub">Use my referral &mdash; new users only</span></span>
-    <span class="badge">$15 FREE</span>
   </a>
 
   <div class="divider"></div>
@@ -372,27 +394,24 @@
     <div class="expand-inner">
       <div class="shows-list">
 
- <div class="shows-list">
+        <div class="show-card">
+          <div class="show-date"><span class="month">May</span><span class="day">23</span></div>
+          <div class="show-info">
+            <div class="show-name">The National Battlefield Card Classic</div>
+            <div class="show-location">&#128205; All-Star Sports Complex &mdash; Gettysburg, PA &middot; 10 AM–5 PM</div>
+          </div>
+          <span class="show-tag">Vending</span>
+        </div>
 
-  <div class="show-card">
-    <div class="show-date"><span class="month">May</span><span class="day">23</span></div>
-    <div class="show-info">
-      <div class="show-name">The National Battlefield Card Classic</div>
-      <div class="show-location">&#128205; All-Star Sports Complex &mdash; Gettysburg, PA &middot; 10 AM–5 PM</div>
-    </div>
-    <span class="show-tag">Vending</span>
-  </div>
+        <div class="show-card">
+          <div class="show-date"><span class="month">May</span><span class="day">24</span></div>
+          <div class="show-info">
+            <div class="show-name">The National Battlefield Card Classic</div>
+            <div class="show-location">&#128205; All-Star Sports Complex &mdash; Gettysburg, PA &middot; 10 AM–4 PM</div>
+          </div>
+          <span class="show-tag">Vending</span>
+        </div>
 
-  <div class="show-card">
-    <div class="show-date"><span class="month">May</span><span class="day">24</span></div>
-    <div class="show-info">
-      <div class="show-name">The National Battlefield Card Classic</div>
-      <div class="show-location">&#128205; All-Star Sports Complex &mdash; Gettysburg, PA &middot; 10 AM–4 PM</div>
-    </div>
-    <span class="show-tag">Vending</span>
-  </div>
-
-</div>
       </div>
     </div>
   </div>
@@ -413,11 +432,7 @@
 document.addEventListener('DOMContentLoaded', function() {
 
   // ── Project H Countdown ──
-  // Target: September 27, 2026 at 9:26 AM Eastern Time
   function getTargetTime() {
-    // Use a date string that unambiguously targets Eastern time
-    // EST = UTC-5, EDT = UTC-4 (September is EDT, so UTC-4)
-    // Sep 27 2026 9:26 AM EDT = Sep 27 2026 13:26:00 UTC
     return new Date('2026-09-27T13:26:00Z');
   }
 
