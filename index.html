@@ -171,7 +171,8 @@
     .expand-container.open { grid-template-rows: 1fr; }
     .expand-inner { overflow: hidden; }
     .shows-list { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; }
-    .show-card { background: var(--surface2); border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius); padding: 14px 18px; display: flex; align-items: center; gap: 14px; }
+    .show-card { background: var(--surface2); border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius); padding: 14px 18px; display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; transition: border-color 0.15s, transform 0.15s; }
+    .show-card:hover { border-color: rgba(255,255,255,0.15); transform: translateY(-1px); }
     .show-date { display: flex; flex-direction: column; align-items: center; background: var(--accent); border-radius: 10px; padding: 6px 10px; min-width: 48px; flex-shrink: 0; }
     .show-date .month { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; color: #fff; }
     .show-date .day { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: #fff; line-height: 1; }
@@ -212,7 +213,6 @@
     @keyframes fadeIn { from{opacity:0} to{opacity:1} }
     @keyframes popIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
     .honeypot { opacity: 0; position: absolute; top: 0; left: 0; height: 0; width: 0; z-index: -1; }
-    .live-dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; background: #ff4d6d; border-radius: 50%; box-shadow: 0 0 6px #ff4d6d; animation: blink 1s step-end infinite; }
   </style>
 </head>
 <body>
@@ -254,25 +254,7 @@
     <p>Card show vendor &middot; Collector &middot; Pokemon enthusiast</p>
   </div>
 
-  <!-- Giveaway Announcement -->
-  <div style="width:100%;background:linear-gradient(135deg,#1a0030,#2d0050,#1a0030);border:2px solid rgba(255,77,109,0.6);border-radius:16px;padding:18px 20px;text-align:center;position:relative;overflow:hidden;animation:fadeUp 0.4s ease both;">
-    <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(255,77,109,0.15) 0%,transparent 70%);pointer-events:none;"></div>
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:0.75rem;letter-spacing:4px;color:rgba(255,180,200,0.8);margin-bottom:6px;">&#x1F389; CELEBRATING 5,000 FOLLOWERS &#x1F389;</div>
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.7rem;letter-spacing:3px;background:linear-gradient(90deg,#ff4d6d,#ffd166,#ff4d6d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;background-size:200% auto;animation:shimmer 3s ease-in-out infinite;line-height:1.15;">FREE POKEMON PACKS<br>EVERY MINUTE</div>
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:2px;color:#ffd166;margin-top:6px;">MAY 19 &bull; 9:17 PM EST</div>
-  </div>
-
-  <!-- Live Stream Button -->
-  <a href="https://www.whatnot.com/s/BlFt7Snt" target="_blank" rel="noopener" class="link-btn delay-1" style="border-color:rgba(255,77,109,0.5);background:linear-gradient(135deg,rgba(123,47,255,0.25),rgba(255,77,109,0.2));">
-    <div class="icon" style="background:linear-gradient(135deg,#ff4d6d,#7B2FFF);position:relative;">
-      <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-      <span class="live-dot"></span>
-    </div>
-    <span class="btn-label" style="font-weight:700;">&#x1F534; Watch the Live Giveaway Stream<span class="btn-sub">Join now on Whatnot &mdash; packs dropping every minute</span></span>
-    <span class="arrow">&#8250;</span>
-  </a>
-
-  <!-- Referral (moved to top) -->
+  <!-- Referral -->
   <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-2">
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg></div>
     <span class="btn-label">Get $15 FREE on Whatnot<span class="btn-sub">&#x1F449; Click here first if you don't have a Whatnot account</span></span>
@@ -395,22 +377,31 @@
       <div class="shows-list">
 
         <div class="show-card">
-          <div class="show-date"><span class="month">May</span><span class="day">23</span></div>
+          <div class="show-date"><span class="month">May</span><span class="day">31</span></div>
           <div class="show-info">
-            <div class="show-name">The National Battlefield Card Classic</div>
-            <div class="show-location">&#128205; All-Star Sports Complex &mdash; Gettysburg, PA &middot; 10 AM–5 PM</div>
+            <div class="show-name">NovaTCGExchange</div>
+            <div class="show-location">&#128205; Fairfax Marriott</div>
           </div>
           <span class="show-tag">Vending</span>
         </div>
 
-        <div class="show-card">
-          <div class="show-date"><span class="month">May</span><span class="day">24</span></div>
+        <a href="https://www.ontreasure.com/events/gettysburg-sports-card-tcg-show-06132026" target="_blank" rel="noopener" class="show-card">
+          <div class="show-date"><span class="month">Jun</span><span class="day">13</span></div>
           <div class="show-info">
-            <div class="show-name">The National Battlefield Card Classic</div>
-            <div class="show-location">&#128205; All-Star Sports Complex &mdash; Gettysburg, PA &middot; 10 AM–4 PM</div>
+            <div class="show-name">Gettysburg Sports Card &amp; TCG Show</div>
+            <div class="show-location">&#128205; Eisenhower Hotel &amp; Conference Center &mdash; Gettysburg, PA &middot; 9 AM–3 PM</div>
           </div>
           <span class="show-tag">Vending</span>
-        </div>
+        </a>
+
+        <a href="https://www.ontreasure.com/events/301-card-show-07112026" target="_blank" rel="noopener" class="show-card">
+          <div class="show-date"><span class="month">Jul</span><span class="day">11</span></div>
+          <div class="show-info">
+            <div class="show-name">301 Card Show</div>
+            <div class="show-location">&#128205; DMV Region</div>
+          </div>
+          <span class="show-tag">Vending</span>
+        </a>
 
       </div>
     </div>
