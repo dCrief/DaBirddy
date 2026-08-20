@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -254,6 +255,57 @@
     <p>Card show vendor &middot; Collector &middot; Pokemon enthusiast</p>
   </div>
 
+  <button type="button" class="link-btn sell-btn delay-8" id="sellToggle">
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg></div>
+    <span class="btn-label">Sell DaBirddy Your Pokemon Cards<span class="btn-sub">Describe your collection &mdash; get a response fast</span></span>
+    <span class="arrow" id="sellArrow">&#8250;</span>
+  </button>
+
+  <div class="expand-container" id="sellContainer">
+    <div class="expand-inner">
+      <div class="sell-form">
+        <div class="sell-form-title">&#128176; Sell Your Collection</div>
+        <p class="sell-form-subtitle">Fill out the form and hit send &mdash; DaBirddy gets your info instantly, and you'll receive a copy too.</p>
+        <div class="field-group">
+          <label for="sellName">Your Name *</label>
+          <input type="text" id="sellName" placeholder="First and last name" autocomplete="name">
+        </div>
+        <div class="field-group">
+          <label for="sellPhone">Phone Number</label>
+          <input type="tel" id="sellPhone" placeholder="(555) 000-0000" autocomplete="tel">
+        </div>
+        <div class="field-group">
+          <label for="sellLocation">Location (City, State) *</label>
+          <input type="text" id="sellLocation" placeholder="e.g. Baltimore, MD" autocomplete="address-level2">
+        </div>
+        <div class="field-group">
+          <label for="sellEmail">Your Email Address *</label>
+          <input type="email" id="sellEmail" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="field-group">
+          <label for="sellDescription">Describe Your Cards / Collection *</label>
+          <textarea id="sellDescription" rows="5" placeholder="Tell me about what you have — sets, condition, quantity, any graded cards, asking price, etc."></textarea>
+        </div>
+        <div class="field-group">
+          <label for="sellContactMethod">Preferred Contact Method *</label>
+          <select id="sellContactMethod">
+            <option value="" disabled selected>Select how you'd like to be contacted...</option>
+            <option value="Email">Email</option>
+            <option value="Phone Call">Phone Call</option>
+            <option value="Text Message">Text Message</option>
+            <option value="Discord">Discord</option>
+          </select>
+        </div>
+        <input class="honeypot" type="text" id="honeypot" name="honeypot" tabindex="-1" autocomplete="off">
+        <button type="button" class="sell-submit" id="sellSubmitBtn">
+          <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 2z"/></svg>
+          Send My Info to DaBirddy
+        </button>
+        <p class="sell-note">Your info goes directly to DaBirddy. A copy is also sent to the email address you provide.</p>
+      </div>
+    </div>
+
+
   <!-- Referral -->
   <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-2">
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg></div>
@@ -313,55 +365,6 @@
 
   <div class="divider"></div>
 
-  <button type="button" class="link-btn sell-btn delay-8" id="sellToggle">
-    <div class="icon"><svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg></div>
-    <span class="btn-label">Sell DaBirddy Your Pokemon Cards<span class="btn-sub">Describe your collection &mdash; get a response fast</span></span>
-    <span class="arrow" id="sellArrow">&#8250;</span>
-  </button>
-
-  <div class="expand-container" id="sellContainer">
-    <div class="expand-inner">
-      <div class="sell-form">
-        <div class="sell-form-title">&#128176; Sell Your Collection</div>
-        <p class="sell-form-subtitle">Fill out the form and hit send &mdash; DaBirddy gets your info instantly, and you'll receive a copy too.</p>
-        <div class="field-group">
-          <label for="sellName">Your Name *</label>
-          <input type="text" id="sellName" placeholder="First and last name" autocomplete="name">
-        </div>
-        <div class="field-group">
-          <label for="sellPhone">Phone Number</label>
-          <input type="tel" id="sellPhone" placeholder="(555) 000-0000" autocomplete="tel">
-        </div>
-        <div class="field-group">
-          <label for="sellLocation">Location (City, State) *</label>
-          <input type="text" id="sellLocation" placeholder="e.g. Baltimore, MD" autocomplete="address-level2">
-        </div>
-        <div class="field-group">
-          <label for="sellEmail">Your Email Address *</label>
-          <input type="email" id="sellEmail" placeholder="you@example.com" autocomplete="email">
-        </div>
-        <div class="field-group">
-          <label for="sellDescription">Describe Your Cards / Collection *</label>
-          <textarea id="sellDescription" rows="5" placeholder="Tell me about what you have — sets, condition, quantity, any graded cards, asking price, etc."></textarea>
-        </div>
-        <div class="field-group">
-          <label for="sellContactMethod">Preferred Contact Method *</label>
-          <select id="sellContactMethod">
-            <option value="" disabled selected>Select how you'd like to be contacted...</option>
-            <option value="Email">Email</option>
-            <option value="Phone Call">Phone Call</option>
-            <option value="Text Message">Text Message</option>
-            <option value="Discord">Discord</option>
-          </select>
-        </div>
-        <input class="honeypot" type="text" id="honeypot" name="honeypot" tabindex="-1" autocomplete="off">
-        <button type="button" class="sell-submit" id="sellSubmitBtn">
-          <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;flex-shrink:0;"><path d="M2 21L23 12 2 3v7l15 2-15 2z"/></svg>
-          Send My Info to DaBirddy
-        </button>
-        <p class="sell-note">Your info goes directly to DaBirddy. A copy is also sent to the email address you provide.</p>
-      </div>
-    </div>
   </div>
 
   <div class="divider"></div>
@@ -454,13 +457,9 @@ document.addEventListener('DOMContentLoaded', function() {
   setInterval(updateCountdown, 1000);
 
   // ── Rest of page logic ──
-  if (window.location.hash === '#sell') {
-    document.getElementById('sellContainer').classList.add('open');
-    document.getElementById('sellArrow').classList.add('open');
-    setTimeout(function() {
-      document.getElementById('sellContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
-  }
+  // Sell Collection is expanded automatically on page load.
+  document.getElementById('sellContainer').classList.add('open');
+  document.getElementById('sellArrow').classList.add('open');
 
   function toggleExpand(containerId, arrowId) {
     var container = document.getElementById(containerId);
