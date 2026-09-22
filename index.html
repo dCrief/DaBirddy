@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -255,6 +254,7 @@
     <p>Card show vendor &middot; Collector &middot; Pokemon enthusiast</p>
   </div>
 
+  <!-- Sell Your Collection -->
   <button type="button" class="link-btn sell-btn delay-8" id="sellToggle">
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg></div>
     <span class="btn-label">Sell DaBirddy Your Pokemon Cards<span class="btn-sub">Describe your collection &mdash; get a response fast</span></span>
@@ -304,7 +304,7 @@
         <p class="sell-note">Your info goes directly to DaBirddy. A copy is also sent to the email address you provide.</p>
       </div>
     </div>
-
+  </div>
 
   <!-- Referral -->
   <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-2">
@@ -365,10 +365,6 @@
 
   <div class="divider"></div>
 
-  </div>
-
-  <div class="divider"></div>
-
   <button type="button" class="link-btn expand-btn delay-8" id="showsToggle">
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M20 4H4C2.89 4 2 4.89 2 6V18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V6C22 4.89 21.11 4 20 4ZM20 18H4V8L12 13L20 8V18ZM12 11L4 6H20L12 11Z"/></svg></div>
     <span class="btn-label">Upcoming Card Shows<span class="btn-sub">See where I'm vending next</span></span>
@@ -379,29 +375,20 @@
     <div class="expand-inner">
       <div class="shows-list">
 
-        <div class="show-card">
-          <div class="show-date"><span class="month">May</span><span class="day">31</span></div>
+        <a href="https://www.ontreasure.com/events/free-pokemon-sports-card-show-fredericksburg-va-september-26-2026-09262026" target="_blank" rel="noopener" class="show-card">
+          <div class="show-date"><span class="month">Sep</span><span class="day">26</span></div>
           <div class="show-info">
-            <div class="show-name">NovaTCGExchange</div>
-            <div class="show-location">&#128205; Fairfax Marriott</div>
-          </div>
-          <span class="show-tag">Vending</span>
-        </div>
-
-        <a href="https://www.ontreasure.com/events/gettysburg-sports-card-tcg-show-06132026" target="_blank" rel="noopener" class="show-card">
-          <div class="show-date"><span class="month">Jun</span><span class="day">13</span></div>
-          <div class="show-info">
-            <div class="show-name">Gettysburg Sports Card &amp; TCG Show</div>
-            <div class="show-location">&#128205; Eisenhower Hotel &amp; Conference Center &mdash; Gettysburg, PA &middot; 9 AM–3 PM</div>
+            <div class="show-name">FREE Pokémon &amp; Sports Card Show</div>
+            <div class="show-location">&#128205; Fredericksburg Fieldhouse &mdash; Fredericksburg, VA</div>
           </div>
           <span class="show-tag">Vending</span>
         </a>
 
-        <a href="https://www.ontreasure.com/events/301-card-show-07112026" target="_blank" rel="noopener" class="show-card">
-          <div class="show-date"><span class="month">Jul</span><span class="day">11</span></div>
+        <a href="https://www.ontreasure.com/events/the-berry-best-card-show-yoomiez-x-703-events-10032026" target="_blank" rel="noopener" class="show-card">
+          <div class="show-date"><span class="month">Oct</span><span class="day">3</span></div>
           <div class="show-info">
-            <div class="show-name">301 Card Show</div>
-            <div class="show-location">&#128205; DMV Region</div>
+            <div class="show-name">The Berry Best Card Show</div>
+            <div class="show-location">&#128205; BWI Airport Marriott &mdash; Linthicum Heights, MD</div>
           </div>
           <span class="show-tag">Vending</span>
         </a>
@@ -457,6 +444,11 @@ document.addEventListener('DOMContentLoaded', function() {
   setInterval(updateCountdown, 1000);
 
   // ── Rest of page logic ──
+  if (window.location.hash === '#sell') {
+    setTimeout(function() {
+      document.getElementById('sellContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
   // Sell Collection is expanded automatically on page load.
   document.getElementById('sellContainer').classList.add('open');
   document.getElementById('sellArrow').classList.add('open');
