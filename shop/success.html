@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DaBirddy &mdash; Order Placed</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/jpeg" href="../logo.jpg">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --bg: #0d0d0f; --surface2: #222228; --accent3: #4ade80; --text: #f0ede8; --muted: #888; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+    .box { background: var(--surface2); border: 1px solid rgba(74,222,128,0.3); border-radius: 20px; padding: 36px 28px; max-width: 420px; width: 100%; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 16px; animation: popIn 0.3s ease; }
+    .icon { width: 64px; height: 64px; background: linear-gradient(135deg,#4ade80,#16a34a); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+    h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2rem; letter-spacing: 2px; color: var(--accent3); }
+    p { font-size: 0.92rem; color: var(--muted); line-height: 1.6; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+    .actions a { padding: 12px 22px; border-radius: 12px; font-weight: 700; font-size: 0.9rem; text-decoration: none; }
+    .primary { background: linear-gradient(135deg,#4ade80,#16a34a); color: #fff; }
+    .secondary { border: 1px solid rgba(255,255,255,0.15); color: var(--text); }
+    @keyframes popIn { from{opacity:0;transform:scale(0.94)} to{opacity:1;transform:scale(1)} }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="icon">&#x2705;</div>
+    <h1>Order Placed!</h1>
+    <p>Thanks for supporting DaBirddy! A receipt is on its way to your email. Your merch is printed to order and usually ships within 5&ndash;12 business days &mdash; you'll get tracking once it's on the move.</p>
+    <p>Questions about your order? Reach out on <a href="https://discord.gg/hkrHEWjZQA" style="color:#ffd166">Discord</a> or email <a href="mailto:d@crief.com" style="color:#ffd166">d@crief.com</a>.</p>
+    <div class="actions">
+      <a class="primary" href="./">Keep Shopping</a>
+      <a class="secondary" href="../">Back to Links</a>
+    </div>
+  </div>
+  <script>
+    // Only clear the cart when we actually came back from Stripe.
+    if (/[?&]session_id=/.test(location.search)) {
+      try { localStorage.removeItem('dabirddy_cart_v1'); } catch (e) {}
+    }
+  </script>
+</body>
+</html>
