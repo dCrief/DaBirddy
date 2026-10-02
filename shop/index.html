@@ -69,6 +69,12 @@
     .product-layout { display: grid; grid-template-columns: 1fr 1fr; overflow-y: auto; }
     .product-img { background: #f4f3f1; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
     .product-img img { width: 100%; height: 100%; object-fit: contain; }
+    .gallery { display: flex; flex-direction: column; background: #f4f3f1; }
+    .thumbs { display: flex; gap: 8px; padding: 0 12px 12px; overflow-x: auto; }
+    .thumbs:empty { display: none; }
+    .thumb { width: 56px; height: 56px; flex-shrink: 0; padding: 0; border-radius: 10px; overflow: hidden; border: 2px solid transparent; background: #fff; cursor: pointer; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb.active { border-color: var(--accent); }
     .product-info { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
     .product-info h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; letter-spacing: 1.5px; line-height: 1.1; padding-right: 32px; }
     .product-price { color: var(--accent2); font-size: 1.2rem; font-weight: 700; }
@@ -149,7 +155,10 @@
 <div class="sheet product-sheet" id="productSheet" role="dialog" aria-modal="true" aria-labelledby="psName">
   <button class="close" data-close aria-label="Close">&times;</button>
   <div class="product-layout">
-    <div class="product-img"><img id="psImg" alt=""></div>
+    <div class="gallery">
+      <div class="product-img"><img id="psImg" alt=""></div>
+      <div class="thumbs" id="psThumbs"></div>
+    </div>
     <div class="product-info">
       <div>
         <h2 id="psName"></h2>
@@ -187,6 +196,8 @@ var SHOP_API = 'https://qlrlfhyvpwieixhpddao.supabase.co/functions/v1';
   var MAX_QTY = 10;
   var products = [];
   var variantIndex = {};   // variantId -> { product, variant }
+  var extraImages = {};    // productId -> [image urls], from extra-images.json
+  var photo = 0;           // index of the photo shown in the product sheet
   var cart = loadCart();   // [{ variantId, quantity }]
   var current = null;      // product open in the sheet
   var sel = { color: null, size: null, qty: 1 };
@@ -216,6 +227,11 @@ var SHOP_API = 'https://qlrlfhyvpwieixhpddao.supabase.co/functions/v1';
       renderCart();
       return;
     }
+    fetch('extra-images.json')
+      .then(function (r) { return r.ok ? r.json() : {}; })
+      .then(function (m) { extraImages = m; renderProductIfOpen(); })
+      .catch(function () {});
+
     fetch(SHOP_API + '/shop-products')
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (data) {
@@ -267,6 +283,7 @@ var SHOP_API = 'https://qlrlfhyvpwieixhpddao.supabase.co/functions/v1';
     var colors = uniq(current.variants.map(function (v) { return v.color; }));
     var sizes = uniq(current.variants.map(function (v) { return v.size; }));
     sel = { color: colors[0] || null, size: sizes.length === 1 ? sizes[0] : null, qty: 1 };
+    photo = 0;
     $('psName').textContent = current.name;
     renderProduct();
     openSheet('productSheet');
@@ -291,17 +308,32 @@ var SHOP_API = 'https://qlrlfhyvpwieixhpddao.supabase.co/functions/v1';
     var m = matching();
     var shown = m[0] || current.variants[0];
     var exact = m.length === 1 || (sizes.length <= 1 && colors.length <= 1) ? m[0] : null;
-    $('psImg').src = shown.image || current.thumbnail || '';
+    var photos = [shown.image || current.thumbnail].concat(extraImages[current.id] || []).filter(Boolean);
+    if (photo >= photos.length) photo = 0;
+    $('psImg').src = photos[photo] || '';
     $('psImg').alt = current.name;
+    $('psThumbs').innerHTML = photos.length < 2 ? '' : photos.map(function (src, i) {
+      return '<button class="thumb' + (i === photo ? ' active' : '') + '" data-photo="' + i + '" aria-label="Photo ' + (i + 1) + '"><img src="' + esc(src) + '" alt=""></button>';
+    }).join('');
     $('psPrice').textContent = money(shown.price);
     $('psQty').textContent = sel.qty;
     $('psAdd').disabled = !exact;
     $('psAdd').textContent = exact ? 'Add to Cart — ' + money(exact.price * sel.qty) : (sizes.length > 1 && !sel.size ? 'Select a Size' : 'Unavailable');
   }
 
+  function renderProductIfOpen() {
+    if (current && $('productSheet').classList.contains('show')) renderProduct();
+  }
+
+  $('psThumbs').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-photo]'); if (!b) return;
+    photo = Number(b.getAttribute('data-photo'));
+    renderProduct();
+  });
   $('psColors').addEventListener('click', function (e) {
     var b = e.target.closest('[data-color]'); if (!b) return;
     sel.color = b.getAttribute('data-color');
+    photo = 0;
     if (sel.size && !matching().length) sel.size = null;
     renderProduct();
   });

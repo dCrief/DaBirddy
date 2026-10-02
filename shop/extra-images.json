@@ -1,0 +1,4 @@
+{
+  "_comment": "Extra product photos shown after Printful's main mockup. Keys are Printful product IDs (from the shop-products response).",
+  "477446750": ["images/1st-edition-tee-side.jpg", "images/1st-edition-tee-sleeve.jpg"]
+}
