@@ -256,6 +256,13 @@
     <p>Card show vendor &middot; Collector &middot; Pokemon enthusiast</p>
   </div>
 
+  <!-- Referral -->
+  <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-2">
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg></div>
+    <span class="btn-label">Get $25 FREE on Whatnot<span class="btn-sub">&#x1F449; Click here first if you don't have a Whatnot account</span></span>
+    <span class="badge">$25 FREE</span>
+  </a>
+
   <!-- Sell Your Collection -->
   <button type="button" class="link-btn sell-btn delay-8" id="sellToggle">
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg></div>
@@ -313,13 +320,6 @@
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M16 6V5a4 4 0 0 0-8 0v1H3v13a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V6h-5zm-6-1a2 2 0 0 1 4 0v1h-4V5zm9 14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8h3v2h2V8h4v2h2V8h3v11z"/></svg></div>
     <span class="btn-label">DaBirddy Merch Shop<span class="btn-sub">Shirts, hoodies &amp; more &mdash; shipped to your door</span></span>
     <span class="arrow">&#8250;</span>
-  </a>
-
-  <!-- Referral -->
-  <a href="https://whatnot.com/invite/dabirddy" target="_blank" rel="noopener" class="link-btn whatnot-ref delay-2">
-    <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 1L15.09 8.26L23 9.27L17.5 14.64L18.9 22.59L12 19L5.1 22.59L6.5 14.64L1 9.27L8.91 8.26L12 1Z"/></svg></div>
-    <span class="btn-label">Get $25 FREE on Whatnot<span class="btn-sub">&#x1F449; Click here first if you don't have a Whatnot account</span></span>
-    <span class="badge">$25 FREE</span>
   </a>
 
   <div class="divider"></div>
@@ -453,14 +453,14 @@ document.addEventListener('DOMContentLoaded', function() {
   setInterval(updateCountdown, 1000);
 
   // ── Rest of page logic ──
+  // Sell Collection starts collapsed; dabirddy.com/#sell opens it and scrolls to it.
   if (window.location.hash === '#sell') {
+    document.getElementById('sellContainer').classList.add('open');
+    document.getElementById('sellArrow').classList.add('open');
     setTimeout(function() {
       document.getElementById('sellContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
   }
-  // Sell Collection is expanded automatically on page load.
-  document.getElementById('sellContainer').classList.add('open');
-  document.getElementById('sellArrow').classList.add('open');
 
   function toggleExpand(containerId, arrowId) {
     var container = document.getElementById(containerId);
