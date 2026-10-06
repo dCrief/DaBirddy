@@ -1,4 +1,8 @@
 {
-  "_comment": "Extra product photos shown after Printful's main mockup. Keys are Printful product IDs (from the shop-products response).",
-  "477446750": ["images/1st-edition-tee-side-v3.jpg", "images/1st-edition-tee-sleeve-v3.jpg"]
+  "_comment": "Extra product photos shown after Printful's main mockup. Keys are Printful product IDs (from the shop-products response). _cards overrides the image on a product's shop card.",
+  "_cards": {
+    "478621017": "images/1st-edition-tee-blossom-front.jpg"
+  },
+  "477446750": ["images/1st-edition-tee-side-v3.jpg", "images/1st-edition-tee-sleeve-v3.jpg"],
+  "478621017": ["images/1st-edition-tee-blossom-side.jpg", "images/1st-edition-tee-blossom-sleeve.jpg"]
 }

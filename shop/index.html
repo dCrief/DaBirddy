@@ -229,7 +229,7 @@ var SHOP_API = 'https://qlrlfhyvpwieixhpddao.supabase.co/functions/v1';
     }
     fetch('extra-images.json')
       .then(function (r) { return r.ok ? r.json() : {}; })
-      .then(function (m) { extraImages = m; renderProductIfOpen(); })
+      .then(function (m) { extraImages = m; if (products.length) renderGrid(); renderProductIfOpen(); })
       .catch(function () {});
 
     fetch(SHOP_API + '/shop-products')
@@ -257,7 +257,7 @@ var SHOP_API = 'https://qlrlfhyvpwieixhpddao.supabase.co/functions/v1';
       var min = Math.min.apply(null, prices), max = Math.max.apply(null, prices);
       var colors = uniq(p.variants.map(function (v) { return v.color; }));
       return '<button class="card" data-id="' + p.id + '" style="animation-delay:' + (i * 0.04) + 's">' +
-        '<div class="card-img"><img loading="lazy" src="' + esc(p.thumbnail || p.variants[0].image) + '" alt="' + esc(p.name) + '"></div>' +
+        '<div class="card-img"><img loading="lazy" src="' + esc((extraImages._cards || {})[p.id] || p.thumbnail || p.variants[0].image) + '" alt="' + esc(p.name) + '"></div>' +
         '<div class="card-body"><div class="card-name">' + esc(p.name) + '</div>' +
         '<div class="card-price">' + (min === max ? money(min) : 'From ' + money(min)) + '</div>' +
         (colors.length > 1 ? '<div class="card-colors"><span>' + colors.length + ' colors</span></div>' : '') +
