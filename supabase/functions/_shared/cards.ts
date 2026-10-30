@@ -159,7 +159,7 @@ export async function shippoLabel(o: Order, s: Settings): Promise<LabelResult> {
   const key = Deno.env.get('SHIPPO_API_KEY');
   if (!key) throw new Error('Shippo isn’t connected yet (add SHIPPO_API_KEY)');
   if (!s.from_street1 || !s.from_city || !s.from_state || !s.from_zip) {
-    throw new Error('Add your return address in the ledger (Shop → Shipping settings)');
+    throw new Error('Add your return address in the ledger (Settings → Shop & shipping)');
   }
   const t = o.ship_to!;
   const call = async (path: string, payload: unknown) => {
