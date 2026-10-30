@@ -97,7 +97,7 @@ export const usd = (cents: number) => (cents / 100).toFixed(2);
 
 // ---------------------------------------------------------------- labels --
 
-type LabelResult = {
+export type LabelResult = {
   tracking_number: string;
   label_path?: string;
   label_url?: string;
@@ -106,7 +106,7 @@ type LabelResult = {
 };
 
 /** Envelope label from TCG Tracking. Re-sending the same order number returns the existing label. */
-async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
+export async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
   const key = Deno.env.get('TCGTRACKING_API_KEY');
   const shipper = Deno.env.get('TCGTRACKING_SHIPPER_NUMBER');
   if (!key || !shipper) throw new Error('TCG Tracking isn’t connected yet (add TCGTRACKING_API_KEY and TCGTRACKING_SHIPPER_NUMBER)');
@@ -151,7 +151,7 @@ async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
 }
 
 /** Package label from Shippo: cheapest USPS Ground Advantage, falling back to the cheapest USPS rate. */
-async function shippoLabel(o: Order, s: Settings): Promise<LabelResult> {
+export async function shippoLabel(o: Order, s: Settings): Promise<LabelResult> {
   const key = Deno.env.get('SHIPPO_API_KEY');
   if (!key) throw new Error('Shippo isn’t connected yet (add SHIPPO_API_KEY)');
   if (!s.from_street1 || !s.from_city || !s.from_state || !s.from_zip) {

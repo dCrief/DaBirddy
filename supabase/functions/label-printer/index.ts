@@ -26,25 +26,33 @@ Deno.serve(async (req) => {
   if (!(await authorized(req))) return json({ error: 'Unauthorized' }, 401);
 
   if (req.method === 'GET') {
-    const { data, error } = await db
-      .from('shop_orders')
-      .select('id, order_number, print_requested_at, printed_at, label_path, label_url')
-      .not('print_requested_at', 'is', null)
-      .not('tracking_number', 'is', null)
-      .neq('status', 'cancelled')
-      .gt('print_requested_at', new Date(Date.now() - 3 * 86400e3).toISOString())
-      .order('print_requested_at', { ascending: true })
-      .limit(20);
-    if (error) return json({ error: error.message }, 500);
+    // Website orders and labels made from Log a deal share one queue.
+    const since = new Date(Date.now() - 3 * 86400e3).toISOString();
+    const [orders, labels] = await Promise.all([
+      db.from('shop_orders')
+        .select('id, order_number, print_requested_at, printed_at, label_path, label_url')
+        .not('print_requested_at', 'is', null).not('tracking_number', 'is', null)
+        .neq('status', 'cancelled').gt('print_requested_at', since).limit(20),
+      db.from('shipping_labels')
+        .select('id, ref, print_requested_at, printed_at, label_path, label_url')
+        .not('print_requested_at', 'is', null).not('tracking_number', 'is', null)
+        .gt('print_requested_at', since).limit(20),
+    ]);
+    if (orders.error) return json({ error: orders.error.message }, 500);
+    if (labels.error) return json({ error: labels.error.message }, 500);
+    const rows = [
+      ...(orders.data ?? []).map((o) => ({ ...o, name: o.order_number })),
+      ...(labels.data ?? []).map((l) => ({ ...l, name: l.ref })),
+    ].sort((a, b) => a.print_requested_at.localeCompare(b.print_requested_at));
     const jobs = [];
-    for (const o of data ?? []) {
+    for (const o of rows) {
       if (o.printed_at && o.printed_at >= o.print_requested_at) continue;
       let url = o.label_url as string | null;
       if (!url && o.label_path) {
         const { data: s } = await db.storage.from('shop-labels').createSignedUrl(o.label_path, 600);
         url = s?.signedUrl ?? null;
       }
-      if (url) jobs.push({ id: o.id, order: o.order_number, requested_at: o.print_requested_at, url });
+      if (url) jobs.push({ id: o.id, order: o.name, requested_at: o.print_requested_at, url });
     }
     return json({ jobs });
   }
@@ -53,10 +61,11 @@ Deno.serve(async (req) => {
     const { id, requested_at, error } = await req.json().catch(() => ({}));
     if (typeof id !== 'string' || typeof requested_at !== 'string') return json({ error: 'id and requested_at required' }, 400);
     // Mark printed as of the request we printed, so a reprint asked for meanwhile still prints.
-    const { error: e } = await db.from('shop_orders')
-      .update(error ? { print_error: String(error).slice(0, 300) } : { printed_at: requested_at, print_error: null })
-      .eq('id', id);
-    if (e) return json({ error: e.message }, 500);
+    const patch = error ? { print_error: String(error).slice(0, 300) } : { printed_at: requested_at, print_error: null };
+    for (const table of ['shop_orders', 'shipping_labels']) {
+      const { error: e } = await db.from(table).update(patch).eq('id', id);
+      if (e) return json({ error: e.message }, 500);
+    }
     return json({ ok: true });
   }
 
