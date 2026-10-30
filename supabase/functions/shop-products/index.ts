@@ -31,12 +31,12 @@ type ShopCard = {
 };
 
 let merch: { at: number; products: ShopProduct[] } | null = null;
-type Shipping = { envelope: number; package: number; envelopeUnder: number; offers: boolean; offerMinPercent: number };
+type Shipping = { envelope: number; package: number; envelopeUnder: number; offers: boolean; offerMinPercent: number; maxCards: number };
 let cards: { at: number; cards: ShopCard[]; paused: boolean; shipping: Shipping | null } | null = null;
 
 async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shipping: Shipping | null }> {
   const s = await loadSettings().catch(() => null);
-  const shipping = s ? { envelope: s.envelope_cents, package: s.package_cents, envelopeUnder: s.envelope_under_cents, offers: s.offers_enabled, offerMinPercent: s.offer_min_percent } : null;
+  const shipping = s ? { envelope: s.envelope_cents, package: s.package_cents, envelopeUnder: s.envelope_under_cents, offers: s.offers_enabled, offerMinPercent: s.offer_min_percent, maxCards: s.envelope_max_cards } : null;
   const { data: running, error: se } = await db.from('shows').select('id').is('ended_at', null).limit(1);
   if (se) throw se;
   if (running?.length) return { cards: [], paused: true, shipping };

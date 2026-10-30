@@ -34,6 +34,7 @@ export type Settings = {
   envelope_cost_cents: number; // what an envelope label costs us (TCG doesn't return a price)
   package_cents: number;
   envelope_under_cents: number;
+  envelope_max_cards: number; // more cards than this ship in a package
   auto_print: boolean; // send new labels straight to David's Rollo
   offers_enabled: boolean;
   offer_min_percent: number;
@@ -87,10 +88,11 @@ export async function loadSettings(): Promise<Settings> {
   return data as Settings;
 }
 
-/** Cards under the cutoff ship in a tracked envelope; anything else, or anything sealed, in a package. */
-export function shippingFor(items: Pick<OrderItem, 'price_cents' | 'qty' | 'category'>[], s: Settings) {
+/** Envelope for a few cards under the cutoff; a package for more cards, a bigger total, or anything sealed. */
+export function shippingFor(items: Pick<OrderItem, 'price_cents' | 'qty' | 'category'>[], s: Pick<Settings, 'envelope_cents' | 'package_cents' | 'envelope_under_cents' | 'envelope_max_cards'>) {
   const subtotal = items.reduce((n, it) => n + it.price_cents * it.qty, 0);
-  const bulky = items.some((it) => it.category === 'sealed');
+  const cards = items.reduce((n, it) => n + it.qty, 0);
+  const bulky = items.some((it) => it.category === 'sealed') || cards > (s.envelope_max_cards ?? 5);
   const method: 'envelope' | 'package' = !bulky && subtotal < s.envelope_under_cents ? 'envelope' : 'package';
   return { method, cents: method === 'envelope' ? s.envelope_cents : s.package_cents, subtotal };
 }

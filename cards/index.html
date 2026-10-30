@@ -302,7 +302,7 @@
     </div>
     <ul class="facts">
       <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="4"/></svg><span>These photos are of this exact card. Judge the condition from them, and tap a photo to zoom in.</span></li>
-      <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7l9 6 9-6M3 7v10h18V7z"/></svg><span id="shipFact">Ships with tracking: a protected envelope ($1.50) for orders under $20, a tracked package ($8) for $20 and up or anything sealed.</span></li>
+      <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7l9 6 9-6M3 7v10h18V7z"/></svg><span id="shipFact">Ships with tracking: a protected envelope ($1.50) for up to 5 cards under $20, a tracked package ($8) for $20 and up, more than 5 cards, or anything sealed.</span></li>
     </ul>
   </div>
 </div>
@@ -339,7 +339,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   var open = null;   // card in the sheet
   var photo = 0;
   // Shipping, same rule as the checkout: under $20 of cards (nothing sealed) goes in an envelope.
-  var SHIP = { envelope: 150, pkg: 800, cutoff: 2000 };
+  var SHIP = { envelope: 150, pkg: 800, cutoff: 2000, maxCards: 5 };
   var CART_KEY = 'dabirddy_cards_cart_v1', LAST_KEY = 'dabirddy_cards_last_order';
   var cart = loadCart();   // [{ id, qty }]
   var loaded = false;      // cards loaded from the shop (not paused)
@@ -390,10 +390,10 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         cards = data.cards || [];
         loaded = true;
         if (data.shipping) {
-          SHIP = { envelope: data.shipping.envelope, pkg: data.shipping.package, cutoff: data.shipping.envelopeUnder };
+          SHIP = { envelope: data.shipping.envelope, pkg: data.shipping.package, cutoff: data.shipping.envelopeUnder, maxCards: data.shipping.maxCards || 5 };
           OFFERS = { on: data.shipping.offers !== false, min: data.shipping.offerMinPercent || 50 };
-          $('shipFact').textContent = 'Ships with tracking: a protected envelope (' + money(SHIP.envelope) + ') for orders under ' + money(SHIP.cutoff) +
-            ', a tracked package (' + money(SHIP.pkg) + ') for ' + money(SHIP.cutoff) + ' and up or anything sealed.';
+          $('shipFact').textContent = 'Ships with tracking: a protected envelope (' + money(SHIP.envelope) + ') for up to ' + SHIP.maxCards + ' cards under ' + money(SHIP.cutoff) +
+            ', a tracked package (' + money(SHIP.pkg) + ') for ' + money(SHIP.cutoff) + ' and up, more than ' + SHIP.maxCards + ' cards, or anything sealed.';
         }
         reconcileCart();
         if (/[?&]cart=1/.test(location.search)) { history.replaceState(history.state, '', location.pathname + location.hash); openCart(); }
@@ -629,7 +629,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   function totals() {
     var sub = 0, sealed = false, n = 0;
     cart.forEach(function (l) { var c = byId(l.id); if (!c) return; sub += c.price * l.qty; n += l.qty; if (c.category === 'sealed') sealed = true; });
-    var env = !sealed && sub < SHIP.cutoff;
+    var env = !sealed && n <= (SHIP.maxCards || 5) && sub < SHIP.cutoff;
     return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0 };
   }
   function renderCart() {
