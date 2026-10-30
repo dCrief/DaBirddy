@@ -167,6 +167,8 @@
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
     /* Cart */
+    .line-price .was { color: var(--muted); font-weight: 500; font-size: 0.85em; margin-left: 4px; }
+    .line-price .offer-tag { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(74,222,128,0.14); color: var(--accent3); vertical-align: 1px; }
     .cart-btn { position: relative; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); cursor: pointer; }
     .cart-btn:hover { border-color: var(--line2); }
     .cart-btn .i { width: 20px; height: 20px; }
@@ -616,19 +618,24 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   var cartNotice = '';
   // Drop cards that sold since they were added, and cap quantities at what's left.
   function reconcileCart() {
-    var removed = [];
+    var removed = [], expired = 0;
     cart = cart.filter(function (l) {
       var c = byId(l.id);
       if (!c) { removed.push(l); return false; }
       l.qty = Math.min(l.qty, c.quantity);
+      if (l.offer && (l.qty !== 1 || !(new Date(l.exp) > new Date()))) { dropOffer(l); expired++; }
       return true;
     });
     if (removed.length) cartNotice = removed.length === 1 ? 'A card in your cart just sold and was removed.' : removed.length + ' cards in your cart sold and were removed.';
+    else if (expired) cartNotice = 'Your offer price ran out, so that card is back at the listed price.';
     saveCart();
   }
+  // A line added from an accepted or countered offer carries its token and the agreed price (one copy).
+  function linePrice(l, c) { return l.offer && l.price > 0 ? l.price : c.price; }
+  function dropOffer(l) { delete l.offer; delete l.price; delete l.exp; }
   function totals() {
     var sub = 0, sealed = false, n = 0;
-    cart.forEach(function (l) { var c = byId(l.id); if (!c) return; sub += c.price * l.qty; n += l.qty; if (c.category === 'sealed') sealed = true; });
+    cart.forEach(function (l) { var c = byId(l.id); if (!c) return; sub += linePrice(l, c) * l.qty; n += l.qty; if (c.category === 'sealed') sealed = true; });
     var env = !sealed && n <= (SHIP.maxCards || 5) && sub < SHIP.cutoff;
     return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0 };
   }
@@ -646,8 +653,9 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         var c = byId(l.id), img = c.photos[0];
         return '<div class="line">' + (img ? '<img src="' + esc(img.grid) + '" alt="">' : '<img alt="">') +
           '<div class="line-info"><div class="line-name">' + esc(c.title) + '</div>' + (sub(c) ? '<div class="line-sub">' + esc(sub(c)) + '</div>' : '') +
-          '<div class="line-row"><span class="line-price">' + money(c.price) + '</span>' +
-          (c.quantity > 1 ? '<div class="qty"><button data-dec="' + c.id + '" aria-label="One fewer">&minus;</button><span>' + l.qty + '</span><button data-inc="' + c.id + '" aria-label="One more"' + (l.qty >= c.quantity ? ' disabled' : '') + '>+</button></div>' : '') +
+          '<div class="line-row"><span class="line-price">' + money(linePrice(l, c)) +
+          (l.offer ? ' <s class="was">' + money(c.price) + '</s> <span class="offer-tag">Your offer</span>' : '') + '</span>' +
+          (c.quantity > 1 && !l.offer ? '<div class="qty"><button data-dec="' + c.id + '" aria-label="One fewer">&minus;</button><span>' + l.qty + '</span><button data-inc="' + c.id + '" aria-label="One more"' + (l.qty >= c.quantity ? ' disabled' : '') + '>+</button></div>' : '') +
           '<button class="remove" data-rm="' + c.id + '">Remove</button></div></div></div>';
       }).join('');
       $('cartFoot').hidden = false;
@@ -662,7 +670,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   function updateBuyBtn() {
     if (!open) return;
     var l = inCart(open.id), b = $('buyBtn');
-    if (l && l.qty >= open.quantity) { b.textContent = 'In your cart · View cart'; b.dataset.mode = 'view'; }
+    if (l && (l.offer || l.qty >= open.quantity)) { b.textContent = 'In your cart · View cart'; b.dataset.mode = 'view'; }
     else { b.textContent = 'Add to cart · ' + money(open.price); b.dataset.mode = 'add'; }
   }
   $('buyBtn').addEventListener('click', function () {
@@ -678,7 +686,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var b = e.target.closest('button'); if (!b) return;
     var id = b.getAttribute('data-inc') || b.getAttribute('data-dec') || b.getAttribute('data-rm');
     var l = inCart(id), c = byId(id); if (!l) return;
-    if (b.hasAttribute('data-inc') && c) l.qty = Math.min(c.quantity, l.qty + 1);
+    if (b.hasAttribute('data-inc') && c && !l.offer) l.qty = Math.min(c.quantity, l.qty + 1);
     if (b.hasAttribute('data-dec')) l.qty -= 1;
     if (b.hasAttribute('data-rm') || l.qty < 1) cart = cart.filter(function (x) { return x !== l; });
     cartNotice = '';
@@ -707,7 +715,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     fetch(SHOP_API + '/card-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: cart.map(function (l) { return { id: l.id, qty: l.qty }; }), release: last || undefined })
+      body: JSON.stringify({ items: cart.map(function (l) { return l.offer ? { id: l.id, qty: 1, offer: l.offer } : { id: l.id, qty: l.qty }; }), release: last || undefined })
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
@@ -716,6 +724,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
           location.href = x.d.url;
           return;
         }
+        if (x.d.expiredOffers) cart.forEach(function (l) { if (x.d.expiredOffers.indexOf(l.id) !== -1) dropOffer(l); });
         if (x.d.unavailable) {
           cart = cart.filter(function (l) { return x.d.unavailable.indexOf(l.id) === -1; });
           cards = cards.filter(function (c) { return x.d.unavailable.indexOf(c.id) === -1; });

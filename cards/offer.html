@@ -82,17 +82,30 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     if (sold) { pill = '<span class="pill bad">Sold</span>'; lead = 'Sorry, this card sold before your offer could go through.'; }
 
     if (!sold && o.pay && (o.status === 'accepted' || o.status === 'countered')) {
-      actions = '<button class="btn primary" id="payBtn">Pay ' + money(o.pay) + ' + shipping</button>';
+      actions = '<button class="btn primary" id="payBtn">Pay ' + money(o.pay) + ' + shipping</button>' +
+        '<button class="btn" id="cartBtn">Add to cart</button>';
     } else if (!sold && c && o.status !== 'paid' && o.status !== 'pending') {
       actions = '<a class="btn primary" href="' + esc(cardLink) + '">See the card</a>';
     }
     actions += '<a class="btn" href="./">Shop more cards</a>';
+    var canCart = /cartBtn/.test(actions);
 
     $('main').innerHTML = '<h1>Your offer</h1>' + pill +
       (c ? '<div class="cardrow">' + (c.photo ? '<img src="' + esc(c.photo) + '" alt="">' : '') + '<div><div class="t">' + esc(c.title) + '</div><div class="s">' +
         esc([c.set, c.number ? '#' + c.number : null].filter(Boolean).join(' · ')) + (c.set || c.number ? ' · ' : '') + 'Listed at ' + money(c.price) + '</div></div></div>' : '') +
       '<p class="lead">' + lead + '</p><p class="err" id="err"></p><div class="actions">' + actions + '</div>' +
+      (canCart ? '<p class="muted" style="margin-top:12px">Want more cards in the same box? Add this one to your cart at ' + money(o.pay) + ', keep shopping, and check out once.</p>' : '') +
       '<p class="muted" style="margin-top:16px">Bookmark this page to check on your offer. Questions? <a href="https://ig.me/m/dabirddygaming" target="_blank" rel="noopener">Message us</a>.</p>';
+
+    var add = $('cartBtn');
+    if (add) add.addEventListener('click', function () {
+      var key = 'dabirddy_cards_cart_v1', cart = [];
+      try { cart = JSON.parse(localStorage.getItem(key) || '[]'); if (!Array.isArray(cart)) cart = []; } catch (e) {}
+      cart = cart.filter(function (l) { return l && l.id !== c.id; });
+      cart.push({ id: c.id, qty: 1, offer: token, price: o.pay, exp: o.expires_at });
+      try { localStorage.setItem(key, JSON.stringify(cart)); } catch (e) { $('err').textContent = 'Your browser blocked the cart. Use Pay instead.'; return; }
+      location.href = './?cart=1';
+    });
 
     var pay = $('payBtn');
     if (pay) pay.addEventListener('click', function () {

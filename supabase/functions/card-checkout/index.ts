@@ -2,6 +2,7 @@
  * POST /card-checkout — turns a cart of cards into a Stripe Checkout session.
  * Body: { items: [{ id: <listing uuid>, qty: number }], release?: <previous order id> }
  *    or { offer: <offer token>, release? }: pay an accepted or countered offer (one card at the offer price).
+ *    A cart line can also carry `offer: <token>` (qty 1) to get that card at the offer price alongside other cards.
  *
  * `release` cancels the buyer's own earlier checkout (they backed out of
  * Stripe and came back): its Stripe page is expired and its holds dropped, so
@@ -26,33 +27,62 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(req) });
   if (req.method !== 'POST') return json(req, { error: 'Method not allowed' }, 405);
 
-  let cart: { id: string; qty: number }[];
+  let cart: { id: string; qty: number; offer?: string }[];
   let release: unknown;
-  let offer: { id: string; token: string; listing_id: string; pay: number } | null = null;
+  let fromOfferPage: string | null = null;
   try {
     const body = await req.json();
     release = body.release;
     if (typeof body.offer === 'string') {
-      if (!/^[0-9a-f]{64}$/.test(body.offer)) throw 0;
-      const { data: o } = await db.from('shop_offers')
-        .select('id, listing_id, status, amount_cents, counter_cents, expires_at').eq('token', body.offer).maybeSingle();
-      if (!o) throw 0;
-      if (o.status === 'paid') return json(req, { error: 'This offer is already paid.' }, 409);
-      if (!(o.status === 'accepted' || o.status === 'countered') || !o.expires_at || new Date(o.expires_at) < new Date()) {
-        return json(req, { error: 'This offer can’t be paid any more. Make a new offer or buy it at the listed price.' }, 409);
-      }
-      offer = { id: o.id, token: body.offer, listing_id: o.listing_id, pay: o.status === 'countered' ? o.counter_cents! : o.amount_cents };
-      cart = [{ id: o.listing_id, qty: 1 }];
+      fromOfferPage = body.offer;
+      cart = [];
     } else {
       cart = body.items;
     }
-    if (!Array.isArray(cart) || !cart.length || cart.length > MAX_LINES) throw 0;
-    for (const it of cart) {
-      if (typeof it.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(it.id) || !Number.isInteger(it.qty) || it.qty < 1 || it.qty > 20) throw 0;
-    }
-    if (new Set(cart.map((c) => c.id)).size !== cart.length) throw 0;
+    if (fromOfferPage === null) {
+      if (!Array.isArray(cart) || !cart.length || cart.length > MAX_LINES) throw 0;
+      for (const it of cart) {
+        if (typeof it.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(it.id) || !Number.isInteger(it.qty) || it.qty < 1 || it.qty > 20) throw 0;
+        if (it.offer !== undefined && (typeof it.offer !== 'string' || !/^[0-9a-f]{64}$/.test(it.offer) || it.qty !== 1)) throw 0;
+      }
+      if (new Set(cart.map((c) => c.id)).size !== cart.length) throw 0;
+    } else if (!/^[0-9a-f]{64}$/.test(fromOfferPage)) throw 0;
   } catch {
     return json(req, { error: 'Invalid cart' }, 400);
+  }
+
+  // Accepted or countered offers: that card at the agreed price (one copy).
+  const offerPrice = new Map<string, { id: string; pay: number }>();
+  const tokens = fromOfferPage ? [fromOfferPage] : cart.filter((c) => c.offer).map((c) => c.offer!);
+  if (tokens.length) {
+    const { data: offers } = await db.from('shop_offers')
+      .select('id, token, listing_id, status, amount_cents, counter_cents, expires_at').in('token', tokens);
+    const byToken = new Map((offers ?? []).map((o) => [o.token, o]));
+    const stale: string[] = [];
+    for (const t of tokens) {
+      const o = byToken.get(t);
+      const line = fromOfferPage ? null : cart.find((c) => c.offer === t)!;
+      const ok = o && (o.status === 'accepted' || o.status === 'countered') && o.expires_at && new Date(o.expires_at) > new Date() &&
+        (!line || line.id === o.listing_id);
+      if (fromOfferPage) {
+        if (!o) return json(req, { error: 'Invalid cart' }, 400);
+        if (o.status === 'paid') return json(req, { error: 'This offer is already paid.' }, 409);
+        if (!ok) return json(req, { error: 'This offer can’t be paid any more. Make a new offer or buy it at the listed price.' }, 409);
+        cart = [{ id: o.listing_id, qty: 1, offer: t }];
+      } else if (!ok) {
+        stale.push(line!.id);
+        continue;
+      }
+      offerPrice.set(o!.listing_id, { id: o!.id, pay: o!.status === 'countered' ? o!.counter_cents! : o!.amount_cents });
+    }
+    if (stale.length) {
+      return json(req, {
+        error: stale.length === 1
+          ? 'The offer price on one card in your cart has expired or was already used. It’s back at the listed price; check your cart and try again.'
+          : 'The offer prices on some cards in your cart have expired or were already used. They’re back at the listed price; check your cart and try again.',
+        expiredOffers: stale,
+      }, 409);
+    }
   }
 
   try {
@@ -80,7 +110,7 @@ Deno.serve(async (req) => {
         set: l.set_name,
         number: l.card_number,
         category: l.category,
-        price_cents: offer ? offer.pay : Math.round(Number(l.price) * 100),
+        price_cents: offerPrice.get(l.id)?.pay ?? Math.round(Number(l.price) * 100),
         qty: c.qty,
         photo: (l.photos as string[])[0] ?? null,
         owner_id: l.owner_id ?? null,
@@ -138,10 +168,10 @@ Deno.serve(async (req) => {
         },
       }],
       payment_intent_data: { description: `DaBirddy cards order ${order.order_number}` },
-      metadata: { kind: 'cards', order_id: order.id, order_number: order.order_number, ...(offer ? { offer_id: offer.id } : {}) },
+      metadata: { kind: 'cards', order_id: order.id, order_number: order.order_number, ...(offerPrice.size ? { offer_ids: [...offerPrice.values()].map((o) => o.id).join(',') } : {}) },
       expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
       success_url: `${base}/success.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: offer ? `${base}/offer.html?o=${offer.token}` : `${base}/?cart=1`,
+      cancel_url: fromOfferPage ? `${base}/offer.html?o=${fromOfferPage}` : `${base}/?cart=1`,
     });
 
     await db.from('shop_orders').update({ stripe_session_id: session.id }).eq('id', order.id);
