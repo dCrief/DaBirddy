@@ -49,6 +49,7 @@ export type OrderItem = {
   price_cents: number;
   qty: number;
   photo: string | null; // private entry-photos name, for the ledger entry
+  owner_id?: string | null; // whose item (null = shared 50/50)
 };
 
 export type ShipTo = {
@@ -302,13 +303,12 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
 
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 
-function describe(o: Order) {
-  const names = o.items.map((it) => (it.qty > 1 ? `${it.qty}× ${it.title}` : it.title)).join(', ');
-  const text = `Website ${o.order_number}: ${names}`;
-  return text.length > 200 ? text.slice(0, 197) + '…' : text;
-}
-
-/** Log the sale in the partner ledger, credited to the payout partner, split 50/50. Once per order. */
+/**
+ * Log the sale in the partner ledger, credited to the payout partner (whose
+ * Stripe pays out). Each item's owner decides the split: shared items 50/50,
+ * a partner's own items all theirs. An order mixing owners becomes one entry
+ * per owner, with shipping and the Stripe fee shared out by item value. Once per order.
+ */
 export async function logSale(orderId: string): Promise<void> {
   const { data } = await db.from('shop_orders').select('*').eq('id', orderId).single();
   const o = data as Order | null;
@@ -316,30 +316,56 @@ export async function logSale(orderId: string): Promise<void> {
   const s = await loadSettings();
   if (!s.payout_partner_id) return;
   const fee = o.stripe_fee_cents ?? 0;
-  const net = (o.total_cents - fee) / 100;
-  const id = crypto.randomUUID();
-  const { error } = await db.from('entries').insert({
-    id,
-    occurred_on: today(),
-    kind: 'sell',
-    partner_id: s.payout_partner_id,
-    amount: net,
-    owner_id: null,
-    fee: fee / 100,
-    platform: 'DaBirddy.com',
-    description: describe(o),
-    note: `Order ${o.order_number} · cards $${usd(o.subtotal_cents)} + shipping $${usd(o.shipping_cents)}${fee ? ` · Stripe fee $${usd(fee)}` : ''}`,
-    source: 'import',
-    photos: o.items.map((it) => it.photo).filter(Boolean),
-    payments: [{ method: 'payout', amount: net }],
-    created_by: s.payout_partner_id,
-  });
-  if (error) {
-    console.error('ledger entry', o.order_number, error.message);
-    return;
+  const groups = new Map<string, OrderItem[]>();
+  for (const it of o.items) {
+    const k = it.owner_id ?? 'shared';
+    groups.set(k, [...(groups.get(k) ?? []), it]);
   }
-  await db.from('shop_orders').update({ ledger_entry_id: id }).eq('id', o.id);
+  const keys = [...groups.keys()];
+  const sub = o.subtotal_cents || 1;
+  let leftTotal = o.total_cents, leftFee = fee, firstId: string | null = null;
+  for (const [i, k] of keys.entries()) {
+    const items = groups.get(k)!;
+    const part = items.reduce((n, it) => n + it.price_cents * it.qty, 0);
+    const last = i === keys.length - 1;
+    const total = last ? leftTotal : Math.round((o.total_cents * part) / sub);
+    const f = last ? leftFee : Math.round((fee * part) / sub);
+    leftTotal -= total;
+    leftFee -= f;
+    const net = (total - f) / 100;
+    const id = crypto.randomUUID();
+    const names = items.map((it) => (it.qty > 1 ? `${it.qty}× ${it.title}` : it.title)).join(', ');
+    const desc = `Website ${o.order_number}: ${names}`;
+    const { error } = await db.from('entries').insert({
+      id,
+      occurred_on: today(),
+      kind: 'sell',
+      partner_id: s.payout_partner_id,
+      amount: net,
+      owner_id: k === 'shared' ? null : k,
+      fee: f / 100,
+      platform: 'DaBirddy.com',
+      description: desc.length > 200 ? desc.slice(0, 197) + '…' : desc,
+      note: `Order ${o.order_number} · cards $${usd(part)}${keys.length > 1 ? ` (part of $${usd(o.subtotal_cents)})` : ''} + shipping${fee ? ` · Stripe fee $${usd(f)}` : ''}`,
+      source: 'import',
+      photos: items.map((it) => it.photo).filter(Boolean),
+      payments: [{ method: 'payout', amount: net }],
+      created_by: s.payout_partner_id,
+    });
+    if (error) {
+      console.error('ledger entry', o.order_number, error.message);
+      return;
+    }
+    firstId ??= id;
+  }
+  await db.from('shop_orders').update({ ledger_entry_id: firstId }).eq('id', o.id);
 }
+
+/** Whose postage: the owner when the whole order is one partner's, else shared. */
+const postageOwner = (o: Order) => {
+  const owners = new Set(o.items.map((it) => it.owner_id ?? null));
+  return owners.size === 1 ? [...owners][0] : null;
+};
 
 async function logPostage(o: Order, cents: number, partnerId: string, carrier: string) {
   const { error } = await db.from('entries').insert({
@@ -347,7 +373,7 @@ async function logPostage(o: Order, cents: number, partnerId: string, carrier: s
     kind: 'expense',
     partner_id: partnerId,
     amount: -cents / 100,
-    owner_id: null,
+    owner_id: postageOwner(o),
     platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
     description: `Postage for website ${o.order_number}`,
     note: `${o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`} · tracking on the order`,

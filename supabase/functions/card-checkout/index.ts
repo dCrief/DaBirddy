@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
 
     const { data: listings, error } = await db
       .from('shop_listings')
-      .select('id, title, set_name, card_number, category, price, photos, status')
+      .select('id, title, set_name, card_number, category, price, photos, status, owner_id')
       .in('id', cart.map((c) => c.id));
     if (error) throw error;
     const byId = new Map((listings ?? []).map((l) => [l.id, l]));
@@ -83,6 +83,7 @@ Deno.serve(async (req) => {
         price_cents: offer ? offer.pay : Math.round(Number(l.price) * 100),
         qty: c.qty,
         photo: (l.photos as string[])[0] ?? null,
+        owner_id: l.owner_id ?? null,
       };
     });
     const settings = await loadSettings();
