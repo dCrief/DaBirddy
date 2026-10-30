@@ -13,6 +13,7 @@
 
 import Stripe from 'npm:stripe@17';
 import { printful } from '../_shared/shop.ts';
+import { db, logSale, makeLabel } from '../_shared/cards.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   httpClient: Stripe.createFetchHttpClient(),
@@ -40,6 +41,8 @@ Deno.serve(async (req) => {
 
   const session = event.data.object as Stripe.Checkout.Session;
   if (session.payment_status !== 'paid') return new Response('Not paid', { status: 200 });
+
+  if (session.metadata?.kind === 'cards') return cardsPaid(session);
 
   // Printful external_id is limited to 32 chars, so key the order on the PaymentIntent id.
   const externalId = String(session.payment_intent ?? session.id).slice(0, 32);
@@ -92,3 +95,57 @@ Deno.serve(async (req) => {
     return new Response('Printful order failed', { status: 500 });
   }
 });
+
+/**
+ * A cards order was paid: take the cards out of stock, save the buyer and
+ * address, log the sale in the ledger, and buy the shipping label.
+ * Safe to run twice. A failed label doesn't fail the webhook; the ledger
+ * shows the error with a Retry button.
+ */
+async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
+  const orderId = session.metadata?.order_id;
+  if (!orderId) return new Response('No order id', { status: 200 });
+  try {
+    const { data: order } = await db.from('shop_orders').select('id, status').eq('id', orderId).maybeSingle();
+    if (!order) throw new Error(`Order ${orderId} not found`);
+    // Paid just as the buyer's earlier checkout was being cancelled: honour the payment.
+    if (order.status === 'cancelled') await db.from('shop_orders').update({ status: 'pending' }).eq('id', orderId);
+
+    const { error: ce } = await db.rpc('shop_complete', { p_order: orderId });
+    if (ce) throw ce;
+
+    const ship = (session as any).collected_information?.shipping_details ?? (session as any).shipping_details;
+    const a = ship?.address;
+    let fee: number | null = null;
+    if (session.payment_intent) {
+      const pi = await stripe.paymentIntents.retrieve(String(session.payment_intent), { expand: ['latest_charge.balance_transaction'] }).catch(() => null);
+      const bt = (pi?.latest_charge as any)?.balance_transaction;
+      if (bt && typeof bt === 'object') fee = bt.fee;
+    }
+    await db.from('shop_orders').update({
+      stripe_session_id: session.id,
+      stripe_payment_intent: session.payment_intent ? String(session.payment_intent) : null,
+      total_cents: session.amount_total,
+      buyer_name: ship?.name ?? session.customer_details?.name ?? null,
+      buyer_email: session.customer_details?.email ?? null,
+      buyer_phone: session.customer_details?.phone ?? null,
+      ship_to: a ? {
+        name: ship.name,
+        line1: a.line1,
+        line2: a.line2 ?? null,
+        city: a.city,
+        state: a.state,
+        postal_code: a.postal_code,
+        country: a.country,
+      } : null,
+      ...(fee != null ? { stripe_fee_cents: fee } : {}),
+    }).eq('id', orderId);
+
+    await logSale(orderId);
+    await makeLabel(orderId);
+    return new Response('OK', { status: 200 });
+  } catch (err) {
+    console.error('cards order', orderId, err);
+    return new Response('Card order failed', { status: 500 });
+  }
+}

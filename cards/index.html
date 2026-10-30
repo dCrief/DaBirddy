@@ -148,6 +148,39 @@
     .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 16px); z-index: 90; background: var(--surface2); border: 1px solid rgba(74,222,128,0.35); padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+    /* Cart */
+    .cart-btn { position: relative; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); cursor: pointer; }
+    .cart-btn:hover { border-color: var(--line2); }
+    .cart-btn .i { width: 20px; height: 20px; }
+    .cart-count { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 0.7rem; font-weight: 700; display: none; align-items: center; justify-content: center; }
+    .cart-count.show { display: flex; }
+    .drawer { position: fixed; z-index: 70; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--surface); border-left: 1px solid var(--line2); display: none; flex-direction: column; }
+    .drawer.show { display: flex; animation: in-right 0.22s ease; }
+    @keyframes in-right { from { transform: translateX(100%); } to { transform: none; } }
+    .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .drawer-head h2 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; font-size: 1.7rem; }
+    .drawer-head .close { position: static; }
+    .lines { flex: 1; overflow-y: auto; padding: 14px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .line { display: flex; gap: 12px; align-items: center; }
+    .line img { width: 58px; height: 76px; object-fit: contain; border-radius: 8px; background: #1d1d23; flex: none; }
+    .line-info { flex: 1; min-width: 0; }
+    .line-name { font-weight: 700; font-size: 0.9rem; line-height: 1.25; }
+    .line-sub { color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
+    .line-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+    .line-price { color: var(--accent2); font-weight: 700; font-size: 0.92rem; }
+    .qty { display: inline-flex; align-items: center; border: 1px solid var(--line2); border-radius: 10px; }
+    .qty button { width: 30px; height: 30px; background: none; border: 0; cursor: pointer; color: var(--muted); font-size: 1rem; }
+    .qty button:disabled { opacity: 0.3; cursor: default; }
+    .qty span { min-width: 22px; text-align: center; font-weight: 700; font-size: 0.88rem; }
+    .remove { background: none; border: 0; color: var(--muted); font-size: 0.78rem; text-decoration: underline; cursor: pointer; }
+    .empty-cart { color: var(--muted); text-align: center; padding: 48px 0; }
+    .drawer-foot { border-top: 1px solid var(--line); padding: 16px 20px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; }
+    .sum { display: flex; justify-content: space-between; font-size: 0.9rem; color: #cfccd4; }
+    .sum.total { font-size: 1.05rem; font-weight: 700; color: var(--text); padding-top: 4px; }
+    .drawer-foot .btn { margin-top: 6px; width: 100%; }
+    .fine { color: var(--muted); font-size: 0.75rem; line-height: 1.5; }
+    .notice { background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.3); color: var(--accent2); border-radius: 10px; padding: 10px 12px; font-size: 0.82rem; }
+
     @media (max-width: 760px) {
       .sheet { top: auto; bottom: 0; left: 0; transform: none; width: 100%; max-height: 94vh; border-radius: 22px 22px 0 0; overflow-y: auto; }
       .sheet.show { display: block; animation: slide 0.25s ease; }
@@ -166,6 +199,10 @@
     <a class="back" href="../">&#8249; Links</a>
     <a class="brand" href="./"><img src="../logo.jpg" alt=""><span>DaBirddy Cards</span></a>
     <a class="merch-link" href="../shop/">Merch</a>
+    <button class="cart-btn" id="cartBtn" aria-label="Open cart">
+      <svg class="i" viewBox="0 0 24 24"><path d="M6 7h15l-1.5 8h-12L6 4H3"/><circle cx="9" cy="19.5" r="1.2"/><circle cx="17" cy="19.5" r="1.2"/></svg>
+      <span class="cart-count" id="cartCount">0</span>
+    </button>
   </div>
 </header>
 
@@ -221,18 +258,30 @@
     <div class="price" id="cPrice"></div>
     <div class="desc" id="cDesc"></div>
     <div class="buy">
-      <button class="btn primary" id="buyBtn" disabled>Online checkout opens soon</button>
+      <button class="btn primary" id="buyBtn">Add to cart</button>
       <div class="buy-row">
-        <a class="btn" id="askBtn" href="https://ig.me/m/dabirddygaming" target="_blank" rel="noopener">Message to buy</a>
+        <a class="btn" id="askBtn" href="https://ig.me/m/dabirddygaming" target="_blank" rel="noopener">Ask a question</a>
         <button class="btn" id="shareBtn">Share</button>
       </div>
     </div>
     <ul class="facts">
       <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="4"/></svg><span>These photos are of this exact card. Judge the condition from them, and tap a photo to zoom in.</span></li>
-      <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7l9 6 9-6M3 7v10h18V7z"/></svg><span>Ships with tracking: a protected envelope for orders under $20, a tracked package above that.</span></li>
+      <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7l9 6 9-6M3 7v10h18V7z"/></svg><span id="shipFact">Ships with tracking: a protected envelope ($1.50) for orders under $20, a tracked package ($8) for $20 and up or anything sealed.</span></li>
     </ul>
   </div>
 </div>
+
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Cart">
+  <div class="drawer-head"><h2>Your Cart</h2><button class="close" id="closeCart" aria-label="Close cart"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="lines" id="lines"></div>
+  <div class="drawer-foot" id="cartFoot">
+    <div class="sum"><span>Cards</span><span id="sumCards">$0</span></div>
+    <div class="sum"><span id="shipLabel">Shipping</span><span id="sumShip">$0</span></div>
+    <div class="sum total"><span>Total</span><span id="sumTotal">$0</span></div>
+    <button class="btn primary" id="checkoutBtn">Checkout</button>
+    <p class="fine">Secure payment by Stripe. Your cards are held for you for 30 minutes while you check out. US shipping only.</p>
+  </div>
+</aside>
 
 <div class="zoom" id="zoom" role="dialog" aria-label="Zoomed photo">
   <button class="close" id="closeZoom" aria-label="Close zoom"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -253,6 +302,11 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   var state = { q: '', cat: 'all', set: 'all', sort: 'new' };
   var open = null;   // card in the sheet
   var photo = 0;
+  // Shipping, same rule as the checkout: under $20 of cards (nothing sealed) goes in an envelope.
+  var SHIP = { envelope: 150, pkg: 800, cutoff: 2000 };
+  var CART_KEY = 'dabirddy_cards_cart_v1', LAST_KEY = 'dabirddy_cards_last_order';
+  var cart = loadCart();   // [{ id, qty }]
+  var loaded = false;      // cards loaded from the shop (not paused)
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
@@ -298,6 +352,14 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         }
         if (data.cardsError) throw new Error('cards');
         cards = data.cards || [];
+        loaded = true;
+        if (data.shipping) {
+          SHIP = { envelope: data.shipping.envelope, pkg: data.shipping.package, cutoff: data.shipping.envelopeUnder };
+          $('shipFact').textContent = 'Ships with tracking: a protected envelope (' + money(SHIP.envelope) + ') for orders under ' + money(SHIP.cutoff) +
+            ', a tracked package (' + money(SHIP.pkg) + ') for ' + money(SHIP.cutoff) + ' and up or anything sealed.';
+        }
+        reconcileCart();
+        if (/[?&]cart=1/.test(location.search)) { history.replaceState(history.state, '', location.pathname + location.hash); openCart(); }
         if (!cards.length) {
           show(stateBox('New cards coming', 'Nothing listed right now. Check back soon, or catch us live on Whatnot.',
             '<a class="btn" href="https://www.whatnot.com/user/dabirddy" target="_blank" rel="noopener">DaBirddy on Whatnot</a>'));
@@ -417,6 +479,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     $('cDesc').textContent = c.description || '';
     $('cDesc').hidden = !c.description;
     $('askBtn').href = 'https://ig.me/m/dabirddygaming';
+    updateBuyBtn();
     $('slides').innerHTML = c.photos.map(function (p, i) {
       return '<div class="slide" data-i="' + i + '"><img src="' + esc(p.full) + '" alt="' + esc(c.title) + (i ? ' (photo ' + (i + 1) + ')' : '') + '"></div>';
     }).join('');
@@ -470,7 +533,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   $('next').addEventListener('click', function () { goTo(photo + 1); });
   $('thumbs').addEventListener('click', function (e) { var b = e.target.closest('[data-i]'); if (b) goTo(Number(b.getAttribute('data-i'))); });
   $('closeSheet').addEventListener('click', function () { closeCard(false); });
-  $('overlay').addEventListener('click', function () { closeCard(false); });
+  $('overlay').addEventListener('click', function () { if ($('drawer').classList.contains('show')) closeCart(); else closeCard(false); });
 
   $('shareBtn').addEventListener('click', function () {
     if (!open) return;
@@ -498,11 +561,139 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   $('closeZoom').addEventListener('click', closeZoom);
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { if ($('zoom').classList.contains('show')) closeZoom(); else closeCard(false); }
+    if (e.key === 'Escape') { if ($('zoom').classList.contains('show')) closeZoom(); else if ($('drawer').classList.contains('show')) closeCart(); else closeCard(false); }
     if (open && !$('zoom').classList.contains('show')) {
       if (e.key === 'ArrowLeft') goTo(photo - 1);
       if (e.key === 'ArrowRight') goTo(photo + 1);
     }
+  });
+
+  // ── Cart ──
+  function loadCart() {
+    try { var c = JSON.parse(localStorage.getItem(CART_KEY) || '[]'); return Array.isArray(c) ? c.filter(function (l) { return l && typeof l.id === 'string' && l.qty > 0; }) : []; }
+    catch (e) { return []; }
+  }
+  function saveCart() { try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {} renderCart(); }
+  function byId(id) { return cards.filter(function (c) { return c.id === id; })[0]; }
+  var cartNotice = '';
+  // Drop cards that sold since they were added, and cap quantities at what's left.
+  function reconcileCart() {
+    var removed = [];
+    cart = cart.filter(function (l) {
+      var c = byId(l.id);
+      if (!c) { removed.push(l); return false; }
+      l.qty = Math.min(l.qty, c.quantity);
+      return true;
+    });
+    if (removed.length) cartNotice = removed.length === 1 ? 'A card in your cart just sold and was removed.' : removed.length + ' cards in your cart sold and were removed.';
+    saveCart();
+  }
+  function totals() {
+    var sub = 0, sealed = false, n = 0;
+    cart.forEach(function (l) { var c = byId(l.id); if (!c) return; sub += c.price * l.qty; n += l.qty; if (c.category === 'sealed') sealed = true; });
+    var env = !sealed && sub < SHIP.cutoff;
+    return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0 };
+  }
+  function renderCart() {
+    var t = totals();
+    $('cartCount').textContent = t.n;
+    $('cartCount').classList.toggle('show', t.n > 0);
+    var lines = cart.filter(function (l) { return byId(l.id); });
+    var notice = cartNotice ? '<div class="notice">' + esc(cartNotice) + '</div>' : '';
+    if (!lines.length) {
+      $('lines').innerHTML = notice + '<div class="empty-cart">Your cart is empty.</div>';
+      $('cartFoot').hidden = true;
+    } else {
+      $('lines').innerHTML = notice + lines.map(function (l) {
+        var c = byId(l.id), img = c.photos[0];
+        return '<div class="line">' + (img ? '<img src="' + esc(img.grid) + '" alt="">' : '<img alt="">') +
+          '<div class="line-info"><div class="line-name">' + esc(c.title) + '</div>' + (sub(c) ? '<div class="line-sub">' + esc(sub(c)) + '</div>' : '') +
+          '<div class="line-row"><span class="line-price">' + money(c.price) + '</span>' +
+          (c.quantity > 1 ? '<div class="qty"><button data-dec="' + c.id + '" aria-label="One fewer">&minus;</button><span>' + l.qty + '</span><button data-inc="' + c.id + '" aria-label="One more"' + (l.qty >= c.quantity ? ' disabled' : '') + '>+</button></div>' : '') +
+          '<button class="remove" data-rm="' + c.id + '">Remove</button></div></div></div>';
+      }).join('');
+      $('cartFoot').hidden = false;
+      $('sumCards').textContent = money(t.sub);
+      $('shipLabel').textContent = t.method === 'envelope' ? 'Shipping · tracked envelope' : 'Shipping · tracked package';
+      $('sumShip').textContent = money(t.ship);
+      $('sumTotal').textContent = money(t.sub + t.ship);
+    }
+    updateBuyBtn();
+  }
+  function inCart(id) { return cart.filter(function (l) { return l.id === id; })[0]; }
+  function updateBuyBtn() {
+    if (!open) return;
+    var l = inCart(open.id), b = $('buyBtn');
+    if (l && l.qty >= open.quantity) { b.textContent = 'In your cart · View cart'; b.dataset.mode = 'view'; }
+    else { b.textContent = 'Add to cart · ' + money(open.price); b.dataset.mode = 'add'; }
+  }
+  $('buyBtn').addEventListener('click', function () {
+    if (!open) return;
+    if (this.dataset.mode === 'view') { closeCard(false); openCart(); return; }
+    var l = inCart(open.id);
+    if (l) l.qty = Math.min(open.quantity, l.qty + 1); else cart.push({ id: open.id, qty: 1 });
+    cartNotice = '';
+    saveCart();
+    toast('Added to cart');
+  });
+  $('lines').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    var id = b.getAttribute('data-inc') || b.getAttribute('data-dec') || b.getAttribute('data-rm');
+    var l = inCart(id), c = byId(id); if (!l) return;
+    if (b.hasAttribute('data-inc') && c) l.qty = Math.min(c.quantity, l.qty + 1);
+    if (b.hasAttribute('data-dec')) l.qty -= 1;
+    if (b.hasAttribute('data-rm') || l.qty < 1) cart = cart.filter(function (x) { return x !== l; });
+    cartNotice = '';
+    saveCart();
+  });
+  function openCart() {
+    renderCart();
+    $('overlay').classList.add('show');
+    $('drawer').classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeCart() {
+    $('drawer').classList.remove('show');
+    if (!open) { $('overlay').classList.remove('show'); document.body.style.overflow = ''; }
+  }
+  $('cartBtn').addEventListener('click', openCart);
+  $('closeCart').addEventListener('click', closeCart);
+
+  $('checkoutBtn').addEventListener('click', function () {
+    var btn = this;
+    if (!cart.length) return;
+    btn.disabled = true;
+    btn.textContent = 'Holding your cards…';
+    var last = null;
+    try { last = localStorage.getItem(LAST_KEY); } catch (e) {}
+    fetch(SHOP_API + '/card-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: cart.map(function (l) { return { id: l.id, qty: l.qty }; }), release: last || undefined })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        if (x.ok && x.d.url) {
+          try { localStorage.setItem(LAST_KEY, x.d.order); } catch (e) {}
+          location.href = x.d.url;
+          return;
+        }
+        if (x.d.unavailable) {
+          cart = cart.filter(function (l) { return x.d.unavailable.indexOf(l.id) === -1; });
+          cards = cards.filter(function (c) { return x.d.unavailable.indexOf(c.id) === -1; });
+          render();
+        }
+        cartNotice = x.d.error || 'Checkout didn’t start. Please try again.';
+        saveCart();
+        btn.disabled = false;
+        btn.textContent = 'Checkout';
+      })
+      .catch(function () {
+        cartNotice = 'Checkout didn’t start. Check your connection and try again.';
+        renderCart();
+        btn.disabled = false;
+        btn.textContent = 'Checkout';
+      });
   });
 
   var toastTimer;
@@ -513,6 +704,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     toastTimer = setTimeout(function () { $('toast').classList.remove('show'); }, 1800);
   }
 
+  renderCart();
   init();
 })();
 </script>

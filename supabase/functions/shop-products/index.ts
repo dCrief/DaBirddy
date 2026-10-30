@@ -11,11 +11,11 @@
  * fields below ever leave this function (never cost or who listed it).
  */
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders, json, loadCatalog, type ShopProduct } from '../_shared/shop.ts';
+import { db, loadSettings } from '../_shared/cards.ts';
 
 const MERCH_CACHE_MS = 5 * 60 * 1000;
-const CARDS_CACHE_MS = 20 * 1000;
+const CARDS_CACHE_MS = 10 * 1000;
 
 type ShopCard = {
   id: string;
@@ -31,16 +31,15 @@ type ShopCard = {
 };
 
 let merch: { at: number; products: ShopProduct[] } | null = null;
-let cards: { at: number; cards: ShopCard[]; paused: boolean } | null = null;
+type Shipping = { envelope: number; package: number; envelopeUnder: number };
+let cards: { at: number; cards: ShopCard[]; paused: boolean; shipping: Shipping | null } | null = null;
 
-const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
-  auth: { persistSession: false },
-});
-
-async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean }> {
+async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shipping: Shipping | null }> {
+  const s = await loadSettings().catch(() => null);
+  const shipping = s ? { envelope: s.envelope_cents, package: s.package_cents, envelopeUnder: s.envelope_under_cents } : null;
   const { data: running, error: se } = await db.from('shows').select('id').is('ended_at', null).limit(1);
   if (se) throw se;
-  if (running?.length) return { cards: [], paused: true };
+  if (running?.length) return { cards: [], paused: true, shipping };
 
   const { data, error } = await db
     .from('shop_listings')
@@ -51,17 +50,31 @@ async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean }> {
     .limit(1000);
   if (error) throw error;
 
+  // Cards in someone's checkout right now aren't available to anyone else.
+  const ids = (data ?? []).map((l) => l.id);
+  const held = new Map<string, number>();
+  if (ids.length) {
+    const { data: holds, error: he } = await db
+      .from('shop_holds')
+      .select('listing_id, qty')
+      .in('listing_id', ids)
+      .gt('expires_at', new Date().toISOString());
+    if (he) throw he;
+    for (const h of holds ?? []) held.set(h.listing_id, (held.get(h.listing_id) ?? 0) + h.qty);
+  }
+
   const url = (name: string) => db.storage.from('shop-photos').getPublicUrl(name).data.publicUrl;
   return {
     paused: false,
-    cards: (data ?? []).map((l) => ({
+    shipping,
+    cards: (data ?? []).filter((l) => l.quantity - (held.get(l.id) ?? 0) > 0).map((l) => ({
       id: l.id,
       title: l.title,
       set: l.set_name,
       number: l.card_number,
       category: l.category,
       price: Math.round(Number(l.price) * 100),
-      quantity: l.quantity,
+      quantity: l.quantity - (held.get(l.id) ?? 0),
       description: l.description,
       photos: (l.photos as string[]).map((p) => ({ grid: url(p.replace(/\.jpg$/, '_m.jpg')), full: url(p) })),
       listedAt: l.published_at,
@@ -94,6 +107,7 @@ Deno.serve(async (req) => {
       products: m.status === 'fulfilled' ? m.value.products : merch?.products ?? [],
       cards: c.status === 'fulfilled' ? c.value.cards : cards?.cards ?? [],
       cardsPaused: c.status === 'fulfilled' ? c.value.paused : cards?.paused ?? false,
+      shipping: c.status === 'fulfilled' ? c.value.shipping : cards?.shipping ?? null,
       merchError: m.status === 'rejected',
       cardsError: c.status === 'rejected',
     },
