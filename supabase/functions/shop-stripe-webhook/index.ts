@@ -14,6 +14,7 @@
 import Stripe from 'npm:stripe@17';
 import { printful } from '../_shared/shop.ts';
 import { db, logSale, makeLabel } from '../_shared/cards.ts';
+import { money, notifyLedger } from '../_shared/push.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   httpClient: Stripe.createFetchHttpClient(),
@@ -108,6 +109,7 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
   try {
     const { data: order } = await db.from('shop_orders').select('id, status').eq('id', orderId).maybeSingle();
     if (!order) throw new Error(`Order ${orderId} not found`);
+    const firstTime = order.status === 'pending' || order.status === 'cancelled'; // Stripe retries: notify once
     // Paid just as the buyer's earlier checkout was being cancelled: honour the payment.
     if (order.status === 'cancelled') await db.from('shop_orders').update({ status: 'pending' }).eq('id', orderId);
 
@@ -146,9 +148,25 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
     }
     await logSale(orderId);
     await makeLabel(orderId);
+    if (firstTime) await notifyOrder(orderId);
     return new Response('OK', { status: 200 });
   } catch (err) {
     console.error('cards order', orderId, err);
     return new Response('Card order failed', { status: 500 });
   }
+}
+
+/** "New order" on the partners' phones. */
+async function notifyOrder(orderId: string) {
+  const { data: o } = await db.from('shop_orders')
+    .select('order_number, items, total_cents, subtotal_cents, shipping_cents, method, buyer_name, label_error, tracking_number')
+    .eq('id', orderId).maybeSingle();
+  if (!o) return;
+  const items = (o.items as { title: string; qty: number }[]).map((it) => (it.qty > 1 ? `${it.qty}× ${it.title}` : it.title)).join(', ');
+  const label = o.tracking_number ? 'Label ready' : o.label_error ? 'Label needs attention' : 'Making the label';
+  await notifyLedger('orders', {
+    title: `New order: ${money(o.total_cents ?? o.subtotal_cents + o.shipping_cents)}`,
+    body: `${o.buyer_name ?? 'Someone'} bought ${items}. ${o.method === 'envelope' ? 'Envelope' : 'Package'} · ${label}.`,
+    tag: `order-${o.order_number}`,
+  });
 }
