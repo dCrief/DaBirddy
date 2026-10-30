@@ -92,7 +92,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
 
     $('main').innerHTML = '<h1>Your offer</h1>' + pill +
       (c ? '<div class="cardrow">' + (c.photo ? '<img src="' + esc(c.photo) + '" alt="">' : '') + '<div><div class="t">' + esc(c.title) + '</div><div class="s">' +
-        esc([c.set, c.number ? '#' + c.number : null].filter(Boolean).join(' · ')) + (c.set || c.number ? ' · ' : '') + 'Listed at ' + money(c.price) + '</div></div></div>' : '') +
+        esc([c.variant, c.set, c.number ? '#' + c.number : null].filter(Boolean).join(' · ')) + (c.variant || c.set || c.number ? ' · ' : '') + 'Listed at ' + money(c.price) + '</div></div></div>' : '') +
       '<p class="lead">' + lead + '</p><p class="err" id="err"></p><div class="actions">' + actions + '</div>' +
       (canCart ? '<p class="muted" style="margin-top:12px">Want more cards in the same box? Add this one to your cart at ' + money(o.pay) + ', keep shopping, and check out once.</p>' : '') +
       '<p class="muted" style="margin-top:16px">Bookmark this page to check on your offer. Questions? <a href="https://ig.me/m/dabirddygaming" target="_blank" rel="noopener">Message us</a>.</p>';

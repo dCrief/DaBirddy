@@ -22,6 +22,7 @@ type ShopCard = {
   title: string;
   set: string | null;
   number: string | null;
+  variant: string | null;  // Reverse Holo, 1st Edition, ...
   category: string;
   price: number;        // cents
   quantity: number;
@@ -43,7 +44,7 @@ async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shippi
 
   const { data, error } = await db
     .from('shop_listings')
-    .select('id, title, set_name, card_number, category, price, quantity, description, photos, published_at')
+    .select('id, title, set_name, card_number, variant, category, price, quantity, description, photos, published_at')
     .eq('status', 'live')
     .gt('quantity', 0)
     .order('published_at', { ascending: false })
@@ -72,6 +73,7 @@ async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shippi
       title: l.title,
       set: l.set_name,
       number: l.card_number,
+      variant: l.variant,
       category: l.category,
       price: Math.round(Number(l.price) * 100),
       quantity: l.quantity - (held.get(l.id) ?? 0),

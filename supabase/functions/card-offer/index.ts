@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
       .eq('token', token).maybeSingle();
     if (!o) return json(req, { error: 'Not found' }, 404);
     const { data: l } = await db.from('shop_listings')
-      .select('id, title, set_name, card_number, price, photos, status, quantity').eq('id', o.listing_id).maybeSingle();
+      .select('id, title, set_name, card_number, variant, price, photos, status, quantity').eq('id', o.listing_id).maybeSingle();
     const expired = !!o.expires_at && new Date(o.expires_at) < new Date();
     const available = l?.status === 'live' && l.quantity > 0;
     const photo = (l?.photos as string[] | undefined)?.[0];
@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
         title: l.title,
         set: l.set_name,
         number: l.card_number,
+        variant: l.variant,
         price: Math.round(Number(l.price) * 100),
         photo: photo ? db.storage.from('shop-photos').getPublicUrl(photo.replace(/\.jpg$/, '_m.jpg')).data.publicUrl : null,
         available,

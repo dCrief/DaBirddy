@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
 
     const { data: listings, error } = await db
       .from('shop_listings')
-      .select('id, title, set_name, card_number, category, price, photos, status, owner_id')
+      .select('id, title, set_name, card_number, variant, category, price, photos, status, owner_id')
       .in('id', cart.map((c) => c.id));
     if (error) throw error;
     const byId = new Map((listings ?? []).map((l) => [l.id, l]));
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
       const l = byId.get(c.id)!;
       return {
         listing_id: l.id,
-        title: l.title,
+        title: l.variant ? `${l.title} (${l.variant})` : l.title,
         set: l.set_name,
         number: l.card_number,
         category: l.category,
