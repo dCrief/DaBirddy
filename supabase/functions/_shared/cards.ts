@@ -110,7 +110,7 @@ async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
   if (!key || !shipper) throw new Error('TCG Tracking isn’t connected yet (add TCGTRACKING_API_KEY and TCGTRACKING_SHIPPER_NUMBER)');
   const t = o.ship_to!;
   const headers = { 'Content-Type': 'application/json', 'X-Shipper-Number': shipper, 'X-API-Key': key };
-  const res = await fetch('https://tcgtracking.com/api/v1/orders', {
+  const res = await fetch('https://tcgtracking.com/api/v1/orders/', { // trailing slash: the bare path redirects and drops the POST
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -122,6 +122,7 @@ async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
       customer_state: t.state,
       zipcode: t.postal_code,
       customer_country: t.country === 'CA' ? 'CA' : 'US',
+      envelope_size: 'L64', // 6x4 sticker for the Rollo
       items: o.items.map((it) => ({ name: it.title.slice(0, 80), quantity: it.qty, price: it.price_cents / 100 })),
     }),
   });
@@ -132,7 +133,7 @@ async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
   let pdf: string | undefined = body.pdf_base64;
   if (!pdf && body.order_id) {
     // Duplicate (a retry) or the PDF step failed: fetch the PDF separately.
-    const r = await fetch(`https://tcgtracking.com/api/v1/orders/${body.order_id}/pdf`, { headers });
+    const r = await fetch(`https://tcgtracking.com/api/v1/orders/${body.order_id}/pdf?size=L64`, { headers });
     const b = await r.json().catch(() => ({}));
     pdf = b.pdf_base64;
   }
@@ -235,6 +236,7 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
       label_url: label.label_url ?? null,
       label_cost_cents: label.label_cost_cents ?? null,
       label_error: null,
+      print_requested_at: new Date().toISOString(), // the Rollo listener prints it
     }).eq('id', o.id);
     if (label.label_cost_cents && s.payout_partner_id) await logPostage(o, label.label_cost_cents, s.payout_partner_id);
     return { ok: true };

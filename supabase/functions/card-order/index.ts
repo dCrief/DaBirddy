@@ -35,8 +35,8 @@ Deno.serve(async (req) => {
         progress = {
           status: String(b.status ?? b.tracking?.status ?? ''),
           events: ((b.events ?? b.tracking?.events ?? []) as any[]).slice(0, 8).map((e) => ({
-            date: String(e.date ?? e.timestamp ?? e.event_date ?? ''),
-            description: String(e.description ?? e.event ?? e.status ?? ''),
+            date: String(e.scan_datetime ?? e.date ?? e.timestamp ?? ''),
+            description: [e.description, [e.facility_city, e.facility_state].filter(Boolean).join(', ')].filter(Boolean).join(' · '),
           })),
         };
       }
