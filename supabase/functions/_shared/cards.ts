@@ -34,6 +34,7 @@ export type Settings = {
   envelope_cost_cents: number; // what an envelope label costs us (TCG doesn't return a price)
   package_cents: number;
   envelope_under_cents: number;
+  auto_print: boolean; // send new labels straight to David's Rollo
 };
 
 export type OrderItem = {
@@ -238,7 +239,8 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
       label_url: label.label_url ?? null,
       label_cost_cents: cost,
       label_error: null,
-      print_requested_at: new Date().toISOString(), // the Rollo listener prints it
+      // The Rollo listener prints it now, or when someone taps Print in the ledger.
+      ...(s.auto_print ? { print_requested_at: new Date().toISOString() } : {}),
     }).eq('id', o.id);
     // Postage is the payout partner's (David's) cost, like the sale is his.
     if (cost && s.payout_partner_id) await logPostage(o, cost, s.payout_partner_id, label.carrier);
