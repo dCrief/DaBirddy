@@ -746,6 +746,8 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
 
   // ── Offers ──
   var OFFERS = { on: true, min: 50 };
+  // Cards under $20 need offers of at least 80% of the price.
+  function offerMin(price) { return Math.ceil(price * (price < 2000 ? Math.max(80, OFFERS.min) : OFFERS.min) / 100); }
   var OFFERS_KEY = 'dabirddy_offers_v1';
   function myOffers() { try { return JSON.parse(localStorage.getItem(OFFERS_KEY) || '{}') || {}; } catch (e) { return {}; } }
   function offerLink(token) { return location.origin + location.pathname.replace(/[^/]*$/, '') + 'offer.html?o=' + token; }
@@ -760,7 +762,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   }
   $('offerBtn').addEventListener('click', function () {
     if (!open) return;
-    var min = Math.ceil(open.price * OFFERS.min / 100);
+    var min = offerMin(open.price);
     $('offerHint').textContent = 'Listed at ' + money(open.price) + '. Offers from ' + money(min) + '. If we accept, you’ll get a link to pay within 48 hours, plus shipping.';
     $('oAmount').placeholder = String(Math.round(open.price * 0.85 / 100));
     try { var me = JSON.parse(localStorage.getItem('dabirddy_offer_me') || '{}'); $('oName').value = $('oName').value || me.name || ''; $('oEmail').value = $('oEmail').value || me.email || ''; $('oPhone').value = $('oPhone').value || me.phone || ''; } catch (e) {}
@@ -776,7 +778,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var body = { listing_id: open.id, amount_cents: amt, name: $('oName').value.trim(), email: $('oEmail').value.trim(), phone: $('oPhone').value.trim(), note: $('oNote').value.trim() };
     if (!(amt > 0)) { $('oErr').textContent = 'Enter your offer in dollars.'; return; }
     if (amt >= open.price) { $('oErr').textContent = 'That’s the full price, so just add it to your cart.'; return; }
-    var min = Math.ceil(open.price * OFFERS.min / 100);
+    var min = offerMin(open.price);
     if (amt < min) { $('oErr').textContent = 'Offers on this card start at ' + money(min) + '.'; return; }
     if (!body.name || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(body.email)) { $('oErr').textContent = 'Add your name and an email we can reply to.'; return; }
     var btn = $('oSend'), card = open;

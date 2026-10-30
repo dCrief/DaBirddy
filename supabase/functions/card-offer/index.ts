@@ -68,7 +68,8 @@ Deno.serve(async (req) => {
   if (!l || l.status !== 'live' || l.quantity < 1) return json(req, { error: 'This card just sold.' }, 409);
   const price = Math.round(Number(l.price) * 100);
   if (amount >= price) return json(req, { error: 'That’s the full price, so just add it to your cart.' }, 400);
-  const min = Math.ceil((price * s.offer_min_percent) / 100);
+  // Cards under $20 need offers of at least 80%; pricier cards use the ledger setting.
+  const min = Math.ceil((price * (price < 2000 ? Math.max(80, s.offer_min_percent) : s.offer_min_percent)) / 100);
   if (amount < min) return json(req, { error: `Offers on this card start at $${(min / 100).toFixed(2)}.` }, 400);
 
   // Keep it to one open offer per buyer per card, and a few open offers per buyer.
