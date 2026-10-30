@@ -101,6 +101,7 @@
     .btn:hover { border-color: rgba(255,255,255,0.3); }
     .btn.primary { background: linear-gradient(135deg, var(--accent), #e0284b); border: 0; color: #fff; }
     .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn[hidden] { display: none; }
 
     /* Card sheet */
     .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.72); display: none; }
@@ -133,6 +134,23 @@
     .buy { display: flex; flex-direction: column; gap: 10px; }
     .buy-row { display: flex; gap: 10px; }
     .buy-row .btn { flex: 1; }
+    .offer-form { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: var(--bg); border: 1px solid var(--line2); border-radius: 14px; }
+    .offer-form[hidden] { display: none; }
+    .offer-form h3 { font-size: 0.95rem; }
+    .offer-form .fine { margin-top: -4px; }
+    .offer-form label { display: flex; flex-direction: column; gap: 5px; font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .offer-form input, .offer-form textarea { font: inherit; font-size: 1rem; text-transform: none; letter-spacing: 0; color: var(--text); background: var(--surface); border: 1px solid var(--line2); border-radius: 10px; padding: 11px 12px; width: 100%; }
+    .offer-form textarea { resize: vertical; min-height: 64px; }
+    .offer-form .money-in { position: relative; }
+    .offer-form .money-in span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; font-size: 1rem; text-transform: none; }
+    .offer-form .money-in input { padding-left: 26px; font-weight: 700; font-size: 1.15rem; }
+    .offer-form .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .offer-form .err { color: #ff8fa3; font-size: 0.85rem; }
+    .offer-form .err:empty { display: none; }
+    .offer-done { padding: 14px 16px; border-radius: 14px; background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.3); font-size: 0.9rem; line-height: 1.5; }
+    .offer-done[hidden] { display: none; }
+    .offer-done a { color: var(--accent2); font-weight: 700; }
+    @media (max-width: 420px) { .offer-form .two { grid-template-columns: 1fr; } }
     .facts { list-style: none; display: flex; flex-direction: column; gap: 9px; padding: 14px 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; font-size: 0.85rem; color: #cfccd4; }
     .facts li { display: flex; gap: 10px; align-items: flex-start; }
     .facts .i { width: 16px; height: 16px; margin-top: 2px; color: var(--accent3); }
@@ -259,6 +277,24 @@
     <div class="desc" id="cDesc"></div>
     <div class="buy">
       <button class="btn primary" id="buyBtn">Add to cart</button>
+      <button class="btn" id="offerBtn" hidden>Make an offer</button>
+      <form class="offer-form" id="offerForm" hidden novalidate>
+        <h3>Make an offer</h3>
+        <p class="fine" id="offerHint"></p>
+        <label>Your offer<span class="money-in"><span>$</span><input id="oAmount" inputmode="decimal" autocomplete="off" required></span></label>
+        <div class="two">
+          <label>Name<input id="oName" autocomplete="name" required></label>
+          <label>Email<input id="oEmail" type="email" autocomplete="email" required></label>
+        </div>
+        <label>Phone (optional, for a text when we reply)<input id="oPhone" type="tel" autocomplete="tel"></label>
+        <label>Note (optional)<textarea id="oNote" maxlength="500"></textarea></label>
+        <p class="err" id="oErr"></p>
+        <div class="buy-row">
+          <button type="button" class="btn" id="oCancel">Cancel</button>
+          <button type="submit" class="btn primary" id="oSend">Send offer</button>
+        </div>
+      </form>
+      <div class="offer-done" id="offerDone" hidden></div>
       <div class="buy-row">
         <a class="btn" id="askBtn" href="https://ig.me/m/dabirddygaming" target="_blank" rel="noopener">Ask a question</a>
         <button class="btn" id="shareBtn">Share</button>
@@ -355,6 +391,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         loaded = true;
         if (data.shipping) {
           SHIP = { envelope: data.shipping.envelope, pkg: data.shipping.package, cutoff: data.shipping.envelopeUnder };
+          OFFERS = { on: data.shipping.offers !== false, min: data.shipping.offerMinPercent || 50 };
           $('shipFact').textContent = 'Ships with tracking: a protected envelope (' + money(SHIP.envelope) + ') for orders under ' + money(SHIP.cutoff) +
             ', a tracked package (' + money(SHIP.pkg) + ') for ' + money(SHIP.cutoff) + ' and up or anything sealed.';
         }
@@ -472,6 +509,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var c = cards.filter(function (x) { return x.id === id; })[0];
     if (!c) return;
     open = c; photo = 0;
+    resetOffer();
     $('cKind').textContent = KIND[c.category] || '';
     $('cName').textContent = c.title;
     $('cSub').textContent = sub(c);
@@ -694,6 +732,59 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         btn.disabled = false;
         btn.textContent = 'Checkout';
       });
+  });
+
+
+  // ── Offers ──
+  var OFFERS = { on: true, min: 50 };
+  var OFFERS_KEY = 'dabirddy_offers_v1';
+  function myOffers() { try { return JSON.parse(localStorage.getItem(OFFERS_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function offerLink(token) { return location.origin + location.pathname.replace(/[^/]*$/, '') + 'offer.html?o=' + token; }
+  function resetOffer() {
+    $('offerForm').hidden = true;
+    $('oErr').textContent = '';
+    $('oAmount').value = '';
+    var mine = open && myOffers()[open.id];
+    $('offerDone').hidden = !mine;
+    if (mine) $('offerDone').innerHTML = 'You made an offer on this card. <a href="' + esc(offerLink(mine)) + '">Check your offer</a>';
+    $('offerBtn').hidden = !OFFERS.on || !open || open.price < 500 || !!mine;
+  }
+  $('offerBtn').addEventListener('click', function () {
+    if (!open) return;
+    var min = Math.ceil(open.price * OFFERS.min / 100);
+    $('offerHint').textContent = 'Listed at ' + money(open.price) + '. Offers from ' + money(min) + '. If we accept, you’ll get a link to pay within 48 hours, plus shipping.';
+    $('oAmount').placeholder = String(Math.round(open.price * 0.85 / 100));
+    try { var me = JSON.parse(localStorage.getItem('dabirddy_offer_me') || '{}'); $('oName').value = $('oName').value || me.name || ''; $('oEmail').value = $('oEmail').value || me.email || ''; $('oPhone').value = $('oPhone').value || me.phone || ''; } catch (e) {}
+    this.hidden = true;
+    $('offerForm').hidden = false;
+    $('oAmount').focus();
+  });
+  $('oCancel').addEventListener('click', function () { resetOffer(); });
+  $('offerForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!open) return;
+    var amt = Math.round(parseFloat($('oAmount').value.replace(/[^0-9.]/g, '')) * 100);
+    var body = { listing_id: open.id, amount_cents: amt, name: $('oName').value.trim(), email: $('oEmail').value.trim(), phone: $('oPhone').value.trim(), note: $('oNote').value.trim() };
+    if (!(amt > 0)) { $('oErr').textContent = 'Enter your offer in dollars.'; return; }
+    if (amt >= open.price) { $('oErr').textContent = 'That’s the full price, so just add it to your cart.'; return; }
+    var min = Math.ceil(open.price * OFFERS.min / 100);
+    if (amt < min) { $('oErr').textContent = 'Offers on this card start at ' + money(min) + '.'; return; }
+    if (!body.name || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(body.email)) { $('oErr').textContent = 'Add your name and an email we can reply to.'; return; }
+    var btn = $('oSend'), card = open;
+    btn.disabled = true; btn.textContent = 'Sending…'; $('oErr').textContent = '';
+    fetch(SHOP_API + '/card-offer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        btn.disabled = false; btn.textContent = 'Send offer';
+        if (!x.ok || !x.d.token) { $('oErr').textContent = x.d.error || 'Couldn’t send your offer. Please try again.'; return; }
+        var all = myOffers(); all[card.id] = x.d.token;
+        try { localStorage.setItem(OFFERS_KEY, JSON.stringify(all)); localStorage.setItem('dabirddy_offer_me', JSON.stringify({ name: body.name, email: body.email, phone: body.phone })); } catch (e) {}
+        if (open !== card) return;
+        $('offerForm').hidden = true;
+        $('offerDone').hidden = false;
+        $('offerDone').innerHTML = '<strong>Offer sent: ' + money(amt) + '.</strong> We’ll reply by email' + (body.phone ? ' or text' : '') + ', usually within a day. <a href="' + esc(offerLink(x.d.token)) + '">Check your offer</a> any time.';
+      })
+      .catch(function () { btn.disabled = false; btn.textContent = 'Send offer'; $('oErr').textContent = 'Couldn’t send your offer. Check your connection and try again.'; });
   });
 
   var toastTimer;

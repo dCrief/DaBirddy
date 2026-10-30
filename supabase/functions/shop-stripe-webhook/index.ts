@@ -141,6 +141,9 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
       ...(fee != null ? { stripe_fee_cents: fee } : {}),
     }).eq('id', orderId);
 
+    if (session.metadata?.offer_id) {
+      await db.from('shop_offers').update({ status: 'paid', order_id: orderId }).eq('id', session.metadata.offer_id);
+    }
     await logSale(orderId);
     await makeLabel(orderId);
     return new Response('OK', { status: 200 });

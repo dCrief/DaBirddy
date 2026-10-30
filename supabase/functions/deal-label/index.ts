@@ -5,12 +5,15 @@
  * the deal's partner and split the same way as the deal.
  *
  * Body: { method: 'envelope'|'package', ship_to: { name, line1, line2?, city, state, postal_code },
- *         description?, value_cents?, partner_id, owner_id? }
+ *         description?, value_cents?, partner_id, owner_id?, force? }
+ *   or { action: 'verify', ship_to } -> { valid, address, messages }: the USPS-standard address.
+ * Buying re-checks the address and ships to the standard form; an address USPS
+ * can't find is refused (needs_confirm) unless force is true.
  * Partners only (signed-in ledger user).
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { db, loadSettings, shippoLabel, tcgTrackingLabel, type Order } from '../_shared/cards.ts';
+import { db, loadSettings, shippoLabel, tcgTrackingLabel, verifyAddress, type Order } from '../_shared/cards.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -46,6 +49,15 @@ Deno.serve(async (req) => {
     postal_code: str(t.postal_code, 10),
     country: 'US',
   };
+  if (b.action === 'verify') {
+    if (!ship_to.line1 || !ship_to.city || !ship_to.state || !ship_to.postal_code) return json({ error: 'Fill in the street, city, state and ZIP' }, 400);
+    try {
+      return json(await verifyAddress(ship_to));
+    } catch (err) {
+      return json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+  }
+
   const { data: partners } = await db.from('partners').select('id');
   const ids = new Set((partners ?? []).map((p) => p.id));
   if (!method) return json({ error: 'Pick envelope or package' }, 400);
@@ -56,6 +68,17 @@ Deno.serve(async (req) => {
   const owner_id = ids.has(b.owner_id) ? b.owner_id : null;
   const description = str(b.description, 120) || null;
   const value_cents = Number.isInteger(b.value_cents) && b.value_cents > 0 ? Math.min(b.value_cents, 9_999_999) : null;
+
+  // Ship to the USPS-standard form of the address; stop if USPS can't find it.
+  try {
+    const check = await verifyAddress(ship_to);
+    if (check.valid) Object.assign(ship_to, check.address);
+    else if (b.force !== true) {
+      return json({ error: `USPS couldn’t confirm this address${check.messages[0] ? `: ${check.messages[0]}` : ''}`, needs_confirm: true, messages: check.messages }, 422);
+    }
+  } catch (err) {
+    if (b.force !== true) return json({ error: err instanceof Error ? err.message : String(err), needs_confirm: true }, 422);
+  }
 
   const { data: row, error: ie } = await db.from('shipping_labels')
     .insert({ method, ship_to, description, value_cents, partner_id: b.partner_id, owner_id, created_by: me.id })
@@ -121,7 +144,7 @@ Deno.serve(async (req) => {
       const { data: signed } = await db.storage.from('shop-labels').createSignedUrl(label.label_path, 3600);
       pdf = signed?.signedUrl ?? null;
     }
-    return json({ ok: true, id: row.id, ref: row.ref, tracking_number: label.tracking_number, cost_cents: cost, pdf, logged: !!expense_entry_id });
+    return json({ ok: true, id: row.id, ref: row.ref, tracking_number: label.tracking_number, cost_cents: cost, pdf, logged: !!expense_entry_id, ship_to });
   } catch (err) {
     // Nothing was bought: drop the row so it doesn't linger.
     await db.from('shipping_labels').delete().eq('id', row.id);

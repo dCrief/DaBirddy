@@ -35,6 +35,8 @@ export type Settings = {
   package_cents: number;
   envelope_under_cents: number;
   auto_print: boolean; // send new labels straight to David's Rollo
+  offers_enabled: boolean;
+  offer_min_percent: number;
 };
 
 export type OrderItem = {
@@ -219,6 +221,38 @@ export async function shippoLabel(o: Order, s: Settings): Promise<LabelResult> {
   };
 }
 
+/** USPS's take on an address, via Shippo: whether it exists, and its standard form. */
+export type Verified = { valid: boolean; address: ShipTo; messages: string[] };
+
+export async function verifyAddress(t: ShipTo): Promise<Verified> {
+  const key = Deno.env.get('SHIPPO_API_KEY');
+  if (!key) throw new Error('Address checking needs Shippo (add SHIPPO_API_KEY)');
+  const r = await fetch('https://api.goshippo.com/addresses/', {
+    method: 'POST',
+    headers: { Authorization: `ShippoToken ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: t.name, street1: t.line1, street2: t.line2 ?? '', city: t.city, state: t.state,
+      zip: t.postal_code, country: t.country || 'US', validate: true,
+    }),
+  });
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Address check failed: ${b.detail ?? r.status}`);
+  const v = b.validation_results ?? {};
+  return {
+    valid: v.is_valid === true,
+    address: {
+      name: t.name,
+      line1: b.street1 || t.line1,
+      line2: b.street2 || null,
+      city: b.city || t.city,
+      state: b.state || t.state,
+      postal_code: b.zip || t.postal_code,
+      country: b.country || t.country || 'US',
+    },
+    messages: ((v.messages ?? []) as { text?: string }[]).map((m) => m.text ?? '').filter(Boolean),
+  };
+}
+
 /**
  * Make the label for an order (if it hasn't got one) and save the result or
  * the error on the order. Never throws: a failed label is retried from the ledger.
@@ -231,6 +265,15 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
   if (!o.ship_to) return { ok: false, error: 'No shipping address on this order' };
   try {
     const s = await loadSettings();
+    // Standardize the address the USPS way first; flag it if USPS can't find it.
+    const check = await verifyAddress(o.ship_to).catch(() => null);
+    if (check) {
+      if (check.valid) o.ship_to = check.address;
+      await db.from('shop_orders').update({
+        ship_to: o.ship_to,
+        address_warning: check.valid ? null : `USPS couldn’t confirm this address${check.messages[0] ? `: ${check.messages[0]}` : ''}. Check it with the buyer.`,
+      }).eq('id', o.id);
+    }
     const label = o.method === 'envelope' ? await tcgTrackingLabel(o) : await shippoLabel(o, s);
     const cost = label.label_cost_cents ?? (o.method === 'envelope' ? s.envelope_cost_cents : null);
     await db.from('shop_orders').update({
