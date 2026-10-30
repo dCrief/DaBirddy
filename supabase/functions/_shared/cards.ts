@@ -38,6 +38,7 @@ export type Settings = {
   auto_print: boolean; // send new labels straight to David's Rollo
   offers_enabled: boolean;
   offer_min_percent: number;
+  parcel_template_id: string | null; // Shippo parcel template for packages (null = the "4 oz Ground" one)
 };
 
 export type OrderItem = {
@@ -155,8 +156,46 @@ export async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
   return { tracking_number: body.tracking_number, label_path, carrier: 'TCG Tracking' };
 }
 
+export type ParcelTemplate = { id: string; name: string; length: string; width: string; height: string; distance_unit: string; weight: string; weight_unit: string };
+
+/** The parcel templates saved in the Shippo account (Settings → Parcel Templates). */
+export async function parcelTemplates(): Promise<ParcelTemplate[]> {
+  const key = Deno.env.get('SHIPPO_API_KEY');
+  if (!key) return [];
+  const r = await fetch('https://api.goshippo.com/user-parcel-templates/', { headers: { Authorization: `ShippoToken ${key}` } });
+  if (!r.ok) throw new Error(`Shippo templates: ${r.status}`);
+  const b = await r.json();
+  return ((b.results ?? []) as any[]).map((t) => ({
+    id: t.object_id, name: t.name ?? 'Template', length: String(t.length), width: String(t.width), height: String(t.height),
+    distance_unit: t.distance_unit ?? 'in', weight: String(t.weight ?? ''), weight_unit: t.weight_unit ?? 'oz',
+  }));
+}
+
+/** The default template: the one chosen in settings, else the one named like "4 oz Ground". */
+export function defaultTemplate(templates: ParcelTemplate[], s: Pick<Settings, 'parcel_template_id'>): ParcelTemplate | null {
+  if (s.parcel_template_id === 'custom') return null; // "Custom size" in settings
+  return templates.find((t) => t.id === s.parcel_template_id)
+    ?? templates.find((t) => /\b4\s*oz\b.*ground/i.test(t.name))
+    ?? null;
+}
+
+/** The parcel to ship: a template (by id, or the default) or the package size in settings. */
+async function parcelFor(s: Settings, templateId?: string | null) {
+  const templates = await parcelTemplates().catch(() => []);
+  const t = (templateId && templates.find((x) => x.id === templateId)) || defaultTemplate(templates, s);
+  if (t) {
+    // A template saved without a weight takes the weight from settings.
+    const weight = t.weight && t.weight !== 'null' ? { weight: t.weight, mass_unit: t.weight_unit } : { weight: String(s.package_weight_oz), mass_unit: 'oz' };
+    return { length: t.length, width: t.width, height: t.height, distance_unit: t.distance_unit, ...weight };
+  }
+  return {
+    length: String(s.package_length_in), width: String(s.package_width_in), height: String(s.package_height_in),
+    distance_unit: 'in', weight: String(s.package_weight_oz), mass_unit: 'oz',
+  };
+}
+
 /** Package label from Shippo: cheapest USPS Ground Advantage, falling back to the cheapest USPS rate. */
-export async function shippoLabel(o: Order, s: Settings): Promise<LabelResult> {
+export async function shippoLabel(o: Order, s: Settings, templateId?: string | null): Promise<LabelResult> {
   const key = Deno.env.get('SHIPPO_API_KEY');
   if (!key) throw new Error('Shippo isn’t connected yet (add SHIPPO_API_KEY)');
   if (!s.from_street1 || !s.from_city || !s.from_state || !s.from_zip) {
@@ -197,14 +236,7 @@ export async function shippoLabel(o: Order, s: Settings): Promise<LabelResult> {
       phone: o.buyer_phone ?? '',
       email: o.buyer_email ?? '',
     },
-    parcels: [{
-      length: String(s.package_length_in),
-      width: String(s.package_width_in),
-      height: String(s.package_height_in),
-      distance_unit: 'in',
-      weight: String(s.package_weight_oz),
-      mass_unit: 'oz',
-    }],
+    parcels: [await parcelFor(s, templateId)],
     metadata: o.order_number,
   });
   const rates: any[] = (shipment.rates ?? []).filter((r: any) => /usps/i.test(r.provider));

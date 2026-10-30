@@ -7,13 +7,15 @@
  * Body: { method: 'envelope'|'package', ship_to: { name, line1, line2?, city, state, postal_code },
  *         description?, value_cents?, partner_id, owner_id?, force? }
  *   or { action: 'verify', ship_to } -> { valid, address, messages }: the USPS-standard address.
+ *   or { action: 'templates' } -> { templates, default_id }: the Shippo parcel templates for packages.
+ * template_id (packages) picks one of those; otherwise the default.
  * Buying re-checks the address and ships to the standard form; an address USPS
  * can't find is refused (needs_confirm) unless force is true.
  * Partners only (signed-in ledger user).
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { db, loadSettings, shippoLabel, tcgTrackingLabel, verifyAddress, type Order } from '../_shared/cards.ts';
+import { db, defaultTemplate, loadSettings, parcelTemplates, shippoLabel, tcgTrackingLabel, verifyAddress, type Order } from '../_shared/cards.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -49,6 +51,14 @@ Deno.serve(async (req) => {
     postal_code: str(t.postal_code, 10),
     country: 'US',
   };
+  if (b.action === 'templates') {
+    try {
+      const [templates, s] = await Promise.all([parcelTemplates(), loadSettings()]);
+      return json({ templates, default_id: defaultTemplate(templates, s)?.id ?? null });
+    } catch (err) {
+      return json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+  }
   if (b.action === 'verify') {
     if (!ship_to.line1 || !ship_to.city || !ship_to.state || !ship_to.postal_code) return json({ error: 'Fill in the street, city, state and ZIP' }, 400);
     try {
@@ -107,7 +117,7 @@ Deno.serve(async (req) => {
       stripe_fee_cents: null,
       ledger_entry_id: null,
     } satisfies Order;
-    const label = method === 'envelope' ? await tcgTrackingLabel(order) : await shippoLabel(order, s);
+    const label = method === 'envelope' ? await tcgTrackingLabel(order) : await shippoLabel(order, s, typeof b.template_id === 'string' ? b.template_id : null);
     const cost = label.label_cost_cents ?? (method === 'envelope' ? s.envelope_cost_cents : 0);
 
     // The label cost, under the deal's partner and split like the deal.
