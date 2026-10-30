@@ -31,6 +31,7 @@ export type Settings = {
   package_height_in: number;
   package_weight_oz: number;
   envelope_cents: number;
+  envelope_cost_cents: number; // what an envelope label costs us (TCG doesn't return a price)
   package_cents: number;
   envelope_under_cents: number;
 };
@@ -230,15 +231,17 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
   try {
     const s = await loadSettings();
     const label = o.method === 'envelope' ? await tcgTrackingLabel(o) : await shippoLabel(o, s);
+    const cost = label.label_cost_cents ?? (o.method === 'envelope' ? s.envelope_cost_cents : null);
     await db.from('shop_orders').update({
       tracking_number: label.tracking_number,
       label_path: label.label_path ?? null,
       label_url: label.label_url ?? null,
-      label_cost_cents: label.label_cost_cents ?? null,
+      label_cost_cents: cost,
       label_error: null,
       print_requested_at: new Date().toISOString(), // the Rollo listener prints it
     }).eq('id', o.id);
-    if (label.label_cost_cents && s.payout_partner_id) await logPostage(o, label.label_cost_cents, s.payout_partner_id);
+    // Postage is the payout partner's (David's) cost, like the sale is his.
+    if (cost && s.payout_partner_id) await logPostage(o, cost, s.payout_partner_id, label.carrier);
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -291,15 +294,16 @@ export async function logSale(orderId: string): Promise<void> {
   await db.from('shop_orders').update({ ledger_entry_id: id }).eq('id', o.id);
 }
 
-async function logPostage(o: Order, cents: number, partnerId: string) {
+async function logPostage(o: Order, cents: number, partnerId: string, carrier: string) {
   const { error } = await db.from('entries').insert({
     occurred_on: today(),
     kind: 'expense',
     partner_id: partnerId,
     amount: -cents / 100,
     owner_id: null,
-    platform: 'Shippo',
+    platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
     description: `Postage for website ${o.order_number}`,
+    note: `${o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`} · tracking on the order`,
     source: 'import',
     payments: [{ method: 'card', amount: cents / 100 }],
     created_by: partnerId,
