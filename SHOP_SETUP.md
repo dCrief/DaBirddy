@@ -66,3 +66,12 @@ var SHOP_API = 'https://YOUR_PROJECT_REF.supabase.co/functions/v1';
 - **Shipping** is a flat rate you choose; Printful bills you the actual shipping cost. Set the rate a bit above Printful's typical rate for your products.
 - **Sales tax** is not collected right now. If you need to collect it, turn on Stripe Tax and add `automatic_tax: { enabled: true }` in `shop-checkout`.
 - **Adding or changing products** happens in Printful only. The shop updates within about 5 minutes.
+
+## Cards (`/cards`)
+`dabirddy.com/cards` lists Pokémon cards, bundles and sealed product. Cards are managed in the Partner Ledger app (Shop tab), not here:
+
+- **Add** a listing with photos (front first, then the back), name, set, card number, type, price and quantity, then **Put on site**.
+- **Sold elsewhere** (Whatnot, a show): tap **Sold** on the listing. It comes off the site within about 20 seconds.
+- **Card shows:** while a show is running in the ledger, `/cards` shows a "we're at a card show" message instead of the cards, so nothing sells twice.
+
+`shop-products` returns the live listings alongside the Printful merch (`cards`, `cardsPaused`). Listing photos are served from the public `shop-photos` storage bucket. Online checkout for cards isn't built yet; the card page has a "Message to buy" button that opens an Instagram DM.
