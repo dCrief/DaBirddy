@@ -361,19 +361,13 @@ export async function logSale(orderId: string): Promise<void> {
   await db.from('shop_orders').update({ ledger_entry_id: firstId }).eq('id', o.id);
 }
 
-/** Whose postage: the owner when the whole order is one partner's, else shared. */
-const postageOwner = (o: Order) => {
-  const owners = new Set(o.items.map((it) => it.owner_id ?? null));
-  return owners.size === 1 ? [...owners][0] : null;
-};
-
 async function logPostage(o: Order, cents: number, partnerId: string, carrier: string) {
   const { error } = await db.from('entries').insert({
     occurred_on: today(),
     kind: 'expense',
     partner_id: partnerId,
     amount: -cents / 100,
-    owner_id: postageOwner(o),
+    owner_id: partnerId, // David's accounts pay for every label, so postage is all his
     platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
     description: `Postage for website ${o.order_number}`,
     note: `${o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`} · tracking on the order`,

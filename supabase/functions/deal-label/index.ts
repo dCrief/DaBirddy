@@ -1,9 +1,8 @@
 /**
  * POST /deal-label — a shipping label for a deal logged in the ledger
  * (Whatnot, eBay, in person...), made with the shop's TCG Tracking (envelope)
- * or Shippo (package) account. The label cost is logged as an expense paid by
- * David (the payout partner, whose TCG Tracking and Shippo accounts are billed),
- * split the same way as the deal.
+ * or Shippo (package) account. The label cost is logged as David's own expense
+ * (the payout partner, whose TCG Tracking and Shippo accounts are billed).
  *
  * Body: { method: 'envelope'|'package', ship_to: { name, line1, line2?, city, state, postal_code },
  *         description?, value_cents?, partner_id, owner_id?, force? }
@@ -118,7 +117,7 @@ Deno.serve(async (req) => {
         occurred_on: today(),
         kind: 'expense',
         partner_id: s.payout_partner_id ?? b.partner_id, // David's accounts pay for labels
-        owner_id,
+        owner_id: s.payout_partner_id ?? b.partner_id, // and the postage is all his
         amount: -cost / 100,
         platform: method === 'envelope' ? 'TCG Tracking' : 'Shippo',
         description: `Postage${description ? `: ${description}` : ''} (${ship_to.name})`.slice(0, 200),
