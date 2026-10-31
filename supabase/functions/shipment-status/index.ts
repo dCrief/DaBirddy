@@ -22,8 +22,11 @@ const cors = {
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
 type Status = 'pre_transit' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'problem' | 'unknown';
-type Shipment = { key: string; direction: 'out' | 'in'; label: string; tracking: string; carrier: string; tcg_order?: string; started_at: string };
-type Check = { status: Status; detail: string | null; location: string | null; eta: string | null; last_event_at: string | null };
+type Place = { city: string | null; state: string | null } | null;
+type Shipment = { key: string; direction: 'out' | 'in'; label: string; tracking: string; carrier: string; tcg_order?: string; started_at: string; from: Place; to: Place };
+type Check = { status: Status; detail: string | null; location: string | null; eta: string | null; last_event_at: string | null; from?: Place; to?: Place };
+const spot = (a: { city?: string | null; state?: string | null } | null | undefined): Place =>
+  a && (a.city || a.state) ? { city: a.city ?? null, state: a.state ?? null } : null;
 
 const DAY = 86400e3;
 
@@ -62,7 +65,10 @@ async function shippo(carrier: string, tn: string): Promise<Check> {
   const map: Record<string, Status> = { PRE_TRANSIT: 'pre_transit', TRANSIT: 'in_transit', DELIVERED: 'delivered', RETURNED: 'problem', FAILURE: 'problem', UNKNOWN: 'unknown' };
   let status = map[t.status as string] ?? 'unknown';
   if (status === 'in_transit' && /out for delivery/i.test(`${detail ?? ''} ${t.substatus?.code ?? ''}`)) status = 'out_for_delivery';
-  return { status, detail, location: place(t.location?.city, t.location?.state), eta: b.eta ?? null, last_event_at: t.status_date ?? null };
+  return {
+    status, detail, location: place(t.location?.city, t.location?.state), eta: b.eta ?? null, last_event_at: t.status_date ?? null,
+    from: spot(b.address_from), to: spot(b.address_to),
+  };
 }
 
 async function tcg(order: string): Promise<Check> {
@@ -88,14 +94,16 @@ async function tcg(order: string): Promise<Check> {
 
 async function shipments(): Promise<Shipment[]> {
   const since = new Date(Date.now() - 45 * DAY).toISOString();
-  const [orders, labels, buys] = await Promise.all([
-    db.from('shop_orders').select('id, order_number, method, tracking_number, buyer_name, items, created_at, status')
+  const [orders, labels, buys, settings] = await Promise.all([
+    db.from('shop_orders').select('id, order_number, method, tracking_number, buyer_name, items, ship_to, created_at, status')
       .not('tracking_number', 'is', null).neq('status', 'cancelled').gt('created_at', since),
     db.from('shipping_labels').select('id, ref, method, tracking_number, ship_to, description, created_at')
       .not('tracking_number', 'is', null).gt('created_at', since),
     db.from('entries').select('id, description, tracking, occurred_on, created_at')
       .eq('awaiting_delivery', true).is('deleted_at', null).not('tracking', 'is', null),
+    db.from('shop_settings').select('from_city, from_state').eq('id', 1).maybeSingle(),
   ]);
+  const home = spot({ city: settings.data?.from_city, state: settings.data?.from_state });
   const out: Shipment[] = [];
   for (const o of orders.data ?? []) {
     const first = (o.items as { title: string }[])[0]?.title ?? 'Website order';
@@ -104,6 +112,7 @@ async function shipments(): Promise<Shipment[]> {
       key: `order:${o.id}`, direction: 'out', tracking: o.tracking_number, started_at: o.created_at,
       label: `${o.buyer_name ?? 'Website order'} · ${first}${n > 1 ? ` +${n - 1}` : ''}`,
       carrier: o.method === 'envelope' ? 'tcg' : 'usps', tcg_order: o.method === 'envelope' ? o.order_number : undefined,
+      from: home, to: spot(o.ship_to as Place),
     });
   }
   for (const l of labels.data ?? []) {
@@ -111,12 +120,13 @@ async function shipments(): Promise<Shipment[]> {
       key: `label:${l.id}`, direction: 'out', tracking: l.tracking_number, started_at: l.created_at,
       label: [(l.ship_to as { name?: string } | null)?.name, l.description].filter(Boolean).join(' · ') || `Label ${l.ref}`,
       carrier: l.method === 'envelope' ? 'tcg' : 'usps', tcg_order: l.method === 'envelope' ? l.ref : undefined,
+      from: home, to: spot(l.ship_to as Place),
     });
   }
   for (const e of buys.data ?? []) {
     const tn = String(e.tracking).replace(/\s+/g, '');
     if (tn.length < 8) continue;
-    out.push({ key: `entry:${e.id}`, direction: 'in', tracking: tn, started_at: e.created_at, label: e.description, carrier: carrierOf(tn) });
+    out.push({ key: `entry:${e.id}`, direction: 'in', tracking: tn, started_at: e.created_at, label: e.description, carrier: carrierOf(tn), from: null, to: home });
   }
   return out;
 }
@@ -138,9 +148,11 @@ Deno.serve(async (req) => {
   const rows = await Promise.all(list.map(async (s) => {
     const base = { key: s.key, direction: s.direction, label: s.label.slice(0, 200), carrier: s.carrier, tracking: s.tracking, url: s.carrier === 'tcg' ? null : trackUrl(s.carrier, s.tracking), started_at: s.started_at, checked_at: now }
     try {
-      return { ...base, ...(s.carrier === 'tcg' ? await tcg(s.tcg_order!) : await shippo(s.carrier, s.tracking)), error: null }
+      const c = s.carrier === 'tcg' ? await tcg(s.tcg_order!) : await shippo(s.carrier, s.tracking)
+      // Our own records know the ends best; the carrier fills in what we don't have.
+      return { ...base, ...c, from: s.from ?? c.from ?? null, to: s.to ?? c.to ?? null, error: null }
     } catch (err) {
-      return { ...base, status: 'unknown' as Status, detail: null, location: null, eta: null, last_event_at: null, error: err instanceof Error ? err.message : String(err) }
+      return { ...base, status: 'unknown' as Status, detail: null, location: null, eta: null, last_event_at: null, from: s.from, to: s.to, error: err instanceof Error ? err.message : String(err) }
     }
   }));
   rows.sort((a, b) => b.started_at.localeCompare(a.started_at));
