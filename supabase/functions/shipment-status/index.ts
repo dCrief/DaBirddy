@@ -1,16 +1,15 @@
 /**
- * POST /shipment-status — checks carrier tracking for everything in the mail and
- * saves it to shipment_status (which the ledger's Reports tab reads).
+ * POST /shipment-status — checks carrier tracking for everything in the mail, for
+ * the Shipments panel at the top of the ledger's Reports tab. Nothing is stored:
+ * the app keeps the last result and asks again when it's over 4 hours old.
  *
  *   Outgoing: website orders and Log-a-deal labels (TCG Tracking envelopes, USPS packages via Shippo)
  *   Incoming: ledger buys marked "awaiting delivery" with a tracking number (carrier guessed from the number)
  *
- * Body: { refresh: 'all' } (the Refresh button) or { refresh: 'due' } (the 4-hourly
- * schedule: only what hasn't been checked in the last ~3.5 hours). Delivered
- * shipments aren't checked again. Returns { rows }.
+ * Returns { rows, checked_at }. Shipments drop off once they're 45 days old (outgoing)
+ * or marked received in the ledger (incoming).
  *
- * Auth: a signed-in partner, or the schedule's x-cron-key (checked against the
- * vault by shipment_cron_ok). Deploy with --no-verify-jwt.
+ * Auth: a signed-in partner.
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -36,7 +35,7 @@ function carrierOf(tn: string): 'usps' | 'ups' | 'fedex' {
   return 'usps';
 }
 
-export function trackUrl(carrier: string, tn: string): string | null {
+function trackUrl(carrier: string, tn: string): string | null {
   if (carrier === 'usps') return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(tn)}`;
   if (carrier === 'ups') return `https://www.ups.com/track?tracknum=${encodeURIComponent(tn)}`;
   if (carrier === 'fedex') return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tn)}`;
@@ -49,7 +48,6 @@ function fromText(text: string, hasEvents: boolean): Status {
   if (/delivered/i.test(text) && !/not delivered|undeliverable/i.test(text)) return 'delivered';
   if (/out for delivery/i.test(text)) return 'out_for_delivery';
   if (/return|exception|fail|undeliverable|alert|refused|damaged|lost/i.test(text)) return 'problem';
-  if (/pre.?transit|label|created|awaiting|shipping info|not yet/i.test(text)) return hasEvents ? 'in_transit' : 'pre_transit';
   return hasEvents ? 'in_transit' : 'pre_transit';
 }
 
@@ -78,12 +76,13 @@ async function tcg(order: string): Promise<Check> {
     .sort((a, b2) => b2.at.localeCompare(a.at));
   const top = events[0];
   const raw = String(b.status ?? b.tracking?.status ?? '');
+  const at = top?.at ? new Date(top.at) : null;
   return {
     status: fromText(`${raw} ${top?.text ?? ''}`, events.length > 0),
     detail: top?.text || raw || null,
     location: top?.where ?? null,
     eta: null,
-    last_event_at: top?.at ? new Date(top.at).toISOString() : null,
+    last_event_at: at && !Number.isNaN(at.getTime()) ? at.toISOString() : null,
   };
 }
 
@@ -126,59 +125,24 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
 
-  const cronKey = req.headers.get('x-cron-key');
-  if (cronKey) {
-    const { data: ok } = await db.rpc('shipment_cron_ok', { p_key: cronKey });
-    if (ok !== true) return json({ error: 'Unauthorized' }, 401);
-  } else {
-    const asUser = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
-      global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
-    });
-    const { data: { user } } = await asUser.auth.getUser();
-    if (!user?.email) return json({ error: 'Sign in first' }, 401);
-    const { data: me } = await db.from('partners').select('id').ilike('email', user.email).maybeSingle();
-    if (!me) return json({ error: 'Not a partner' }, 403);
-  }
+  const asUser = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+  });
+  const { data: { user } } = await asUser.auth.getUser();
+  if (!user?.email) return json({ error: 'Sign in first' }, 401);
+  const { data: me } = await db.from('partners').select('id').ilike('email', user.email).maybeSingle();
+  if (!me) return json({ error: 'Not a partner' }, 403);
 
-  const body = await req.json().catch(() => ({}));
-  const all = body.refresh === 'all';
   const list = await shipments();
-  const { data: prev } = await db.from('shipment_status').select('key, status, tracking, checked_at, delivered_at');
-  const before = new Map((prev ?? []).map((p) => [p.key, p]));
   const now = new Date().toISOString();
-
   const rows = await Promise.all(list.map(async (s) => {
-    const p = before.get(s.key);
-    const same = p?.tracking === s.tracking;
-    const fresh = same && p?.checked_at && Date.now() - new Date(p.checked_at).getTime() < 3.5 * 3600e3;
-    if (same && (p?.status === 'delivered' || (!all && fresh))) return null; // nothing to do
+    const base = { key: s.key, direction: s.direction, label: s.label.slice(0, 200), carrier: s.carrier, tracking: s.tracking, url: s.carrier === 'tcg' ? null : trackUrl(s.carrier, s.tracking), started_at: s.started_at, checked_at: now }
     try {
-      const c = s.carrier === 'tcg' ? await tcg(s.tcg_order!) : await shippo(s.carrier, s.tracking);
-      return {
-        key: s.key, direction: s.direction, label: s.label.slice(0, 200), carrier: s.carrier, tracking: s.tracking,
-        url: s.carrier === 'tcg' ? null : trackUrl(s.carrier, s.tracking), ...c,
-        error: null, checked_at: now, started_at: s.started_at,
-        delivered_at: c.status === 'delivered' ? (c.last_event_at ?? now) : null,
-      };
+      return { ...base, ...(s.carrier === 'tcg' ? await tcg(s.tcg_order!) : await shippo(s.carrier, s.tracking)), error: null }
     } catch (err) {
-      return {
-        key: s.key, direction: s.direction, label: s.label.slice(0, 200), carrier: s.carrier, tracking: s.tracking,
-        url: s.carrier === 'tcg' ? null : trackUrl(s.carrier, s.tracking), status: (same && p?.status) || 'unknown',
-        error: err instanceof Error ? err.message : String(err), checked_at: now, started_at: s.started_at,
-      };
+      return { ...base, status: 'unknown' as Status, detail: null, location: null, eta: null, last_event_at: null, error: err instanceof Error ? err.message : String(err) }
     }
   }));
-  const changed = rows.filter((r): r is NonNullable<typeof r> => !!r);
-  if (changed.length) {
-    const { error } = await db.from('shipment_status').upsert(changed, { onConflict: 'key' });
-    if (error) return json({ error: error.message }, 500);
-  }
-  // Shipments that left the list (cancelled, received, too old) drop off.
-  const keys = new Set(list.map((s) => s.key));
-  const gone = [...before.keys()].filter((k) => !keys.has(k));
-  if (gone.length) await db.from('shipment_status').delete().in('key', gone);
-  await db.from('shipment_status_runs').upsert({ id: 1, ran_at: now, manual: all });
-
-  const { data: out } = await db.from('shipment_status').select('*').order('started_at', { ascending: false });
-  return json({ rows: out ?? [], checked: changed.length, ran_at: now });
+  rows.sort((a, b) => b.started_at.localeCompare(a.started_at));
+  return json({ rows, checked_at: now }, 200);
 });
