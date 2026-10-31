@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>DaBirddy &mdash; Pokémon Cards for Sale</title>
-  <meta name="description" content="Pokémon singles, graded slabs, bundles and sealed product from DaBirddy. Real photos of every card. Every order ships with tracking.">
+  <title>DaBirddy &mdash; Pokemon Cards for Sale</title>
+  <meta name="description" content="Pokemon singles, graded slabs, bundles and sealed product from DaBirddy. Real photos of every card. Every order ships with tracking.">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="DaBirddy — Pokémon Cards for Sale">
+  <meta property="og:title" content="DaBirddy — Pokemon Cards for Sale">
   <meta property="og:description" content="Real photos of every card. Every order ships with tracking.">
   <meta property="og:image" content="../logo.jpg">
   <meta name="theme-color" content="#0d0d0f">
@@ -210,6 +210,8 @@
     .coupon-msg:empty { display: none; }
     .coupon-msg.note { color: var(--muted); }
     .sum.discount { color: var(--accent3); }
+    .promo { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; background: linear-gradient(90deg, rgba(255,77,109,0.18), rgba(255,209,102,0.18)); border-bottom: 1px solid var(--line); color: var(--text); font-size: 0.85rem; font-weight: 600; text-align: center; }
+    .promo .i { width: 16px; height: 16px; color: var(--accent2); flex: none; }
     .notice { background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.3); color: var(--accent2); border-radius: 10px; padding: 10px 12px; font-size: 0.82rem; }
 
     @media (max-width: 760px) {
@@ -225,6 +227,8 @@
 </head>
 <body>
 
+<div class="promo" role="note"><svg class="i" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/></svg>Code words now can be applied as coupons at checkout</div>
+
 <header class="topbar">
   <div class="topbar-inner">
     <a class="back" href="../">&#8249; Links</a>
@@ -238,7 +242,7 @@
 </header>
 
 <section class="hero">
-  <h1>Pokémon Cards<br>For Sale</h1>
+  <h1>Pokemon Cards<br>For Sale</h1>
   <div class="perks">
     <span><svg class="i" viewBox="0 0 24 24"><path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="4"/></svg>Real photos of the exact card</span>
     <span><svg class="i" viewBox="0 0 24 24"><path d="M3 7l9 6 9-6M3 7v10h18V7z"/></svg>Every order ships with tracking</span>
@@ -558,7 +562,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     $('overlay').classList.remove('show');
     $('sheet').classList.remove('show');
     document.body.style.overflow = '';
-    document.title = 'DaBirddy — Pokémon Cards for Sale';
+    document.title = 'DaBirddy — Pokemon Cards for Sale';
     if (!fromHistory) {
       if (history.state && history.state.card) history.back();
       else history.replaceState(null, '', location.pathname + location.search);
