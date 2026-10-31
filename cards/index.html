@@ -199,6 +199,17 @@
     .sum.total { font-size: 1.05rem; font-weight: 700; color: var(--text); padding-top: 4px; }
     .drawer-foot .btn { margin-top: 6px; width: 100%; }
     .fine { color: var(--muted); font-size: 0.75rem; line-height: 1.5; }
+    .coupon { display: flex; gap: 8px; }
+    .coupon[hidden], .coupon-on[hidden], .sum[hidden] { display: none; }
+    .coupon input { flex: 1; min-width: 0; font: inherit; font-size: 16px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); background: var(--bg); border: 1px solid var(--line2); border-radius: 10px; padding: 0 12px; min-height: 42px; }
+    .coupon input::placeholder { text-transform: none; letter-spacing: 0; color: var(--muted); }
+    .drawer-foot .coupon .btn { margin-top: 0; width: auto; min-height: 42px; padding: 0 16px; }
+    .coupon-on { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.85rem; padding: 9px 12px; border-radius: 10px; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); color: var(--accent3); font-weight: 600; }
+    .coupon-on .link { background: none; border: 0; color: var(--muted); font: inherit; font-size: 0.8rem; text-decoration: underline; cursor: pointer; }
+    .coupon-msg { font-size: 0.8rem; color: #ff8fa3; }
+    .coupon-msg:empty { display: none; }
+    .coupon-msg.note { color: var(--muted); }
+    .sum.discount { color: var(--accent3); }
     .notice { background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.3); color: var(--accent2); border-radius: 10px; padding: 10px 12px; font-size: 0.82rem; }
 
     @media (max-width: 760px) {
@@ -313,7 +324,14 @@
   <div class="drawer-head"><h2>Your Cart</h2><button class="close" id="closeCart" aria-label="Close cart"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="lines" id="lines"></div>
   <div class="drawer-foot" id="cartFoot">
+    <form class="coupon" id="couponForm" novalidate>
+      <input id="couponIn" placeholder="Coupon code" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Coupon code">
+      <button type="submit" class="btn" id="couponBtn">Apply</button>
+    </form>
+    <div class="coupon-on" id="couponOn" hidden><span id="couponText"></span><button type="button" class="link" id="couponRm">Remove</button></div>
+    <p class="coupon-msg" id="couponMsg"></p>
     <div class="sum"><span>Cards</span><span id="sumCards">$0</span></div>
+    <div class="sum discount" id="sumDiscRow" hidden><span id="discLabel">Coupon</span><span id="sumDisc">$0</span></div>
     <div class="sum"><span id="shipLabel">Shipping</span><span id="sumShip">$0</span></div>
     <div class="sum total"><span>Total</span><span id="sumTotal">$0</span></div>
     <button class="btn primary" id="checkoutBtn">Checkout</button>
@@ -637,7 +655,11 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var sub = 0, sealed = false, n = 0;
     cart.forEach(function (l) { var c = byId(l.id); if (!c) return; sub += linePrice(l, c) * l.qty; n += l.qty; if (c.category === 'sealed') sealed = true; });
     var env = !sealed && n <= (SHIP.maxCards || 5) && sub < SHIP.cutoff;
-    return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0 };
+    // Coupons only come off cards at their listed price, never off an accepted offer.
+    var eligible = 0;
+    cart.forEach(function (l) { var c = byId(l.id); if (c && !l.offer) eligible += c.price * l.qty; });
+    var disc = coupon && eligible ? Math.min(Math.round(eligible * coupon.percent / 100), coupon.maxOff || Infinity, eligible) : 0;
+    return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0, eligible: eligible, disc: disc };
   }
   function renderCart() {
     var t = totals();
@@ -662,7 +684,8 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
       $('sumCards').textContent = money(t.sub);
       $('shipLabel').textContent = t.method === 'envelope' ? 'Shipping · tracked envelope' : 'Shipping · tracked package';
       $('sumShip').textContent = money(t.ship);
-      $('sumTotal').textContent = money(t.sub + t.ship);
+      $('sumTotal').textContent = money(t.sub - t.disc + t.ship);
+      renderCoupon(t);
     }
     updateBuyBtn();
   }
@@ -715,7 +738,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     fetch(SHOP_API + '/card-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: cart.map(function (l) { return l.offer ? { id: l.id, qty: 1, offer: l.offer } : { id: l.id, qty: l.qty }; }), release: last || undefined })
+      body: JSON.stringify({ items: cart.map(function (l) { return l.offer ? { id: l.id, qty: 1, offer: l.offer } : { id: l.id, qty: l.qty }; }), coupon: coupon && totals().eligible ? coupon.code : undefined, release: last || undefined })
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
@@ -724,6 +747,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
           location.href = x.d.url;
           return;
         }
+        if (x.d.badCoupon) { setCoupon(null); $('couponMsg').textContent = x.d.error || 'That coupon code isn’t valid.'; }
         if (x.d.expiredOffers) cart.forEach(function (l) { if (x.d.expiredOffers.indexOf(l.id) !== -1) dropOffer(l); });
         if (x.d.unavailable) {
           cart = cart.filter(function (l) { return x.d.unavailable.indexOf(l.id) === -1; });
@@ -743,6 +767,48 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
       });
   });
 
+
+  // ── Coupon ──
+  var COUPON_KEY = 'dabirddy_cards_coupon_v1';
+  var coupon = null; // { code, percent, maxOff }
+  try { var sc = JSON.parse(localStorage.getItem(COUPON_KEY) || 'null'); if (sc && sc.code && sc.percent > 0) coupon = sc; } catch (e) {}
+  function setCoupon(c) {
+    coupon = c;
+    try { c ? localStorage.setItem(COUPON_KEY, JSON.stringify(c)) : localStorage.removeItem(COUPON_KEY); } catch (e) {}
+    renderCart();
+  }
+  function renderCoupon(t) {
+    $('couponForm').hidden = !!coupon;
+    $('couponOn').hidden = !coupon;
+    $('sumDiscRow').hidden = !t.disc;
+    if (coupon) {
+      $('couponText').textContent = coupon.code + ' · ' + coupon.percent + '% off' + (coupon.maxOff ? ' (up to ' + money(coupon.maxOff) + ')' : '');
+      $('discLabel').textContent = 'Coupon ' + coupon.code;
+      $('sumDisc').textContent = '−' + money(t.disc);
+      var msg = $('couponMsg');
+      if (!t.eligible) { msg.className = 'coupon-msg note'; msg.textContent = 'Coupons can’t be used on accepted offers.'; }
+      else if (cart.some(function (l) { return l.offer; })) { msg.className = 'coupon-msg note'; msg.textContent = 'Your offer card isn’t discounted; the coupon applies to the rest.'; }
+      else if (msg.className.indexOf('note') !== -1) msg.textContent = '';
+    }
+  }
+  $('couponForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var code = $('couponIn').value.trim().toUpperCase(), btn = $('couponBtn'), msg = $('couponMsg');
+    msg.className = 'coupon-msg'; msg.textContent = '';
+    if (!code) return;
+    if (!totals().eligible) { msg.textContent = 'Coupons can’t be used on accepted offers.'; return; }
+    btn.disabled = true;
+    fetch(SHOP_API + '/card-coupon?code=' + encodeURIComponent(code), { cache: 'no-store' })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        btn.disabled = false;
+        if (!x.ok || !x.d.code) { msg.textContent = x.d.error || 'That coupon code isn’t valid.'; return; }
+        $('couponIn').value = '';
+        setCoupon({ code: x.d.code, percent: x.d.percent, maxOff: x.d.maxOff });
+      })
+      .catch(function () { btn.disabled = false; msg.textContent = 'Couldn’t check that code. Try again.'; });
+  });
+  $('couponRm').addEventListener('click', function () { $('couponMsg').textContent = ''; setCoupon(null); });
 
   // ── Offers ──
   var OFFERS = { on: true, min: 50 };

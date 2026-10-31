@@ -29,10 +29,16 @@ Deno.serve(async (req) => {
 
   let cart: { id: string; qty: number; offer?: string }[];
   let release: unknown;
+  let couponCode: string | null = null;
   let fromOfferPage: string | null = null;
   try {
     const body = await req.json();
     release = body.release;
+    if (typeof body.coupon === 'string' && body.coupon.trim()) {
+      const code = body.coupon.trim().toUpperCase();
+      couponCode = code;
+      if (!/^[A-Z0-9-]{2,30}$/.test(code)) return json(req, { error: 'That coupon code isn’t valid.', badCoupon: true }, 409);
+    }
     if (typeof body.offer === 'string') {
       fromOfferPage = body.offer;
       cart = [];
@@ -119,9 +125,20 @@ Deno.serve(async (req) => {
     const settings = await loadSettings();
     const ship = shippingFor(items, settings);
 
+    // Coupons come off the cards at their listed price only, never off an accepted or countered offer.
+    let discount = 0;
+    if (couponCode) {
+      if (fromOfferPage) return json(req, { error: 'Coupons can’t be used on accepted offers.', badCoupon: true }, 409);
+      const { data: c } = await db.from('shop_coupons').select('code, percent_off, max_off_cents, active').eq('code', couponCode).maybeSingle();
+      if (!c || !c.active) return json(req, { error: 'That coupon code isn’t valid.', badCoupon: true }, 409);
+      const eligible = items.filter((it) => !offerPrice.has(it.listing_id)).reduce((n, it) => n + it.price_cents * it.qty, 0);
+      if (!eligible) return json(req, { error: 'Coupons can’t be used on accepted offers.', badCoupon: true }, 409);
+      discount = Math.min(Math.round((eligible * c.percent_off) / 100), c.max_off_cents ?? Infinity, eligible);
+    }
+
     const { data: order, error: oe } = await db
       .from('shop_orders')
-      .insert({ items, subtotal_cents: ship.subtotal, shipping_cents: ship.cents, method: ship.method })
+      .insert({ items, subtotal_cents: ship.subtotal, shipping_cents: ship.cents, method: ship.method, coupon_code: discount ? couponCode : null, discount_cents: discount })
       .select('id, order_number')
       .single();
     if (oe) throw oe;
@@ -138,8 +155,14 @@ Deno.serve(async (req) => {
     const photoUrl = (name: string | null) =>
       name ? db.storage.from('shop-photos').getPublicUrl(name.replace(/\.jpg$/, '_m.jpg')).data.publicUrl : undefined;
 
+    // A one-time Stripe coupon for this order's exact discount.
+    const stripeCoupon = discount
+      ? await stripe.coupons.create({ amount_off: discount, currency: 'usd', duration: 'once', max_redemptions: 1, name: `${couponCode} (${order.order_number})`.slice(0, 40) })
+      : null;
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      ...(stripeCoupon ? { discounts: [{ coupon: stripeCoupon.id }] } : {}),
       line_items: items.map((it) => ({
         quantity: it.qty,
         price_data: {
@@ -168,7 +191,7 @@ Deno.serve(async (req) => {
         },
       }],
       payment_intent_data: { description: `DaBirddy cards order ${order.order_number}` },
-      metadata: { kind: 'cards', order_id: order.id, order_number: order.order_number, ...(offerPrice.size ? { offer_ids: [...offerPrice.values()].map((o) => o.id).join(',') } : {}) },
+      metadata: { kind: 'cards', order_id: order.id, order_number: order.order_number, ...(offerPrice.size ? { offer_ids: [...offerPrice.values()].map((o) => o.id).join(',') } : {}), ...(discount ? { coupon: couponCode!, discount_cents: String(discount) } : {}) },
       expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
       success_url: `${base}/success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: fromOfferPage ? `${base}/offer.html?o=${fromOfferPage}` : `${base}/?cart=1`,
