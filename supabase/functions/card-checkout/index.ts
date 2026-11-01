@@ -129,11 +129,21 @@ Deno.serve(async (req) => {
     let discount = 0;
     if (couponCode) {
       if (fromOfferPage) return json(req, { error: 'Coupons can’t be used on accepted offers.', badCoupon: true }, 409);
-      const { data: c } = await db.from('shop_coupons').select('code, percent_off, max_off_cents, active').eq('code', couponCode).maybeSingle();
+      const { data: c } = await db.from('shop_coupons')
+        .select('code, percent_off, max_off_cents, amount_off_cents, min_subtotal_cents, max_uses, active').eq('code', couponCode).maybeSingle();
       if (!c || !c.active) return json(req, { error: 'That coupon code isn’t valid.', badCoupon: true }, 409);
+      if (c.max_uses) {
+        const { data: used } = await db.rpc('shop_coupon_uses', { p_code: c.code });
+        if ((used ?? 0) >= c.max_uses) return json(req, { error: 'That coupon has been used up.', badCoupon: true }, 409);
+      }
       const eligible = items.filter((it) => !offerPrice.has(it.listing_id)).reduce((n, it) => n + it.price_cents * it.qty, 0);
       if (!eligible) return json(req, { error: 'Coupons can’t be used on accepted offers.', badCoupon: true }, 409);
-      discount = Math.min(Math.round((eligible * c.percent_off) / 100), c.max_off_cents ?? Infinity, eligible);
+      if (c.min_subtotal_cents && eligible < c.min_subtotal_cents) {
+        return json(req, { error: `${c.code} needs $${(c.min_subtotal_cents / 100).toFixed(2).replace(/\.00$/, '')} of cards (not counting offer cards).`, badCoupon: true }, 409);
+      }
+      discount = c.amount_off_cents
+        ? Math.min(c.amount_off_cents, eligible)
+        : Math.min(Math.round((eligible * (c.percent_off ?? 0)) / 100), c.max_off_cents ?? Infinity, eligible);
     }
 
     const { data: order, error: oe } = await db

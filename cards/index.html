@@ -662,8 +662,11 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     // Coupons only come off cards at their listed price, never off an accepted offer.
     var eligible = 0;
     cart.forEach(function (l) { var c = byId(l.id); if (c && !l.offer) eligible += c.price * l.qty; });
-    var disc = coupon && eligible ? Math.min(Math.round(eligible * coupon.percent / 100), coupon.maxOff || Infinity, eligible) : 0;
-    return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0, eligible: eligible, disc: disc };
+    var short = coupon && coupon.minSubtotal && eligible < coupon.minSubtotal ? coupon.minSubtotal - eligible : 0;
+    var disc = !coupon || !eligible || short ? 0
+      : coupon.amountOff ? Math.min(coupon.amountOff, eligible)
+      : Math.min(Math.round(eligible * coupon.percent / 100), coupon.maxOff || Infinity, eligible);
+    return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0, eligible: eligible, disc: disc, short: short };
   }
   function renderCart() {
     var t = totals();
@@ -742,7 +745,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     fetch(SHOP_API + '/card-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: cart.map(function (l) { return l.offer ? { id: l.id, qty: 1, offer: l.offer } : { id: l.id, qty: l.qty }; }), coupon: coupon && totals().eligible ? coupon.code : undefined, release: last || undefined })
+      body: JSON.stringify({ items: cart.map(function (l) { return l.offer ? { id: l.id, qty: 1, offer: l.offer } : { id: l.id, qty: l.qty }; }), coupon: coupon && totals().disc ? coupon.code : undefined, release: last || undefined })
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
@@ -775,7 +778,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   // ── Coupon ──
   var COUPON_KEY = 'dabirddy_cards_coupon_v1';
   var coupon = null; // { code, percent, maxOff }
-  try { var sc = JSON.parse(localStorage.getItem(COUPON_KEY) || 'null'); if (sc && sc.code && sc.percent > 0) coupon = sc; } catch (e) {}
+  try { var sc = JSON.parse(localStorage.getItem(COUPON_KEY) || 'null'); if (sc && sc.code && (sc.percent > 0 || sc.amountOff > 0)) coupon = sc; } catch (e) {}
   function setCoupon(c) {
     coupon = c;
     try { c ? localStorage.setItem(COUPON_KEY, JSON.stringify(c)) : localStorage.removeItem(COUPON_KEY); } catch (e) {}
@@ -786,11 +789,13 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     $('couponOn').hidden = !coupon;
     $('sumDiscRow').hidden = !t.disc;
     if (coupon) {
-      $('couponText').textContent = coupon.code + ' · ' + coupon.percent + '% off' + (coupon.maxOff ? ' (up to ' + money(coupon.maxOff) + ')' : '');
+      $('couponText').textContent = coupon.code + ' · ' + (coupon.amountOff ? money(coupon.amountOff) + ' off' : coupon.percent + '% off' + (coupon.maxOff ? ' (up to ' + money(coupon.maxOff) + ')' : '')) +
+        (coupon.minSubtotal ? ' ' + money(coupon.minSubtotal) + '+' : '');
       $('discLabel').textContent = 'Coupon ' + coupon.code;
       $('sumDisc').textContent = '−' + money(t.disc);
       var msg = $('couponMsg');
       if (!t.eligible) { msg.className = 'coupon-msg note'; msg.textContent = 'Coupons can’t be used on accepted offers.'; }
+      else if (t.short) { msg.className = 'coupon-msg note'; msg.textContent = 'Add ' + money(t.short) + ' more in cards to use ' + coupon.code + '.'; }
       else if (cart.some(function (l) { return l.offer; })) { msg.className = 'coupon-msg note'; msg.textContent = 'Your offer card isn’t discounted; the coupon applies to the rest.'; }
       else if (msg.className.indexOf('note') !== -1) msg.textContent = '';
     }
@@ -808,7 +813,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         btn.disabled = false;
         if (!x.ok || !x.d.code) { msg.textContent = x.d.error || 'That coupon code isn’t valid.'; return; }
         $('couponIn').value = '';
-        setCoupon({ code: x.d.code, percent: x.d.percent, maxOff: x.d.maxOff });
+        setCoupon({ code: x.d.code, percent: x.d.percent, maxOff: x.d.maxOff, amountOff: x.d.amountOff, minSubtotal: x.d.minSubtotal });
       })
       .catch(function () { btn.disabled = false; msg.textContent = 'Couldn’t check that code. Try again.'; });
   });
