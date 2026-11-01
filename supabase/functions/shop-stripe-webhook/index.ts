@@ -162,22 +162,23 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
 /** "New order" on the partners' phones. */
 async function notifyOrder(orderId: string) {
   const { data: o } = await db.from('shop_orders')
-    .select('order_number, items, total_cents, subtotal_cents, shipping_cents, method, buyer_name, label_error, tracking_number')
+    .select('order_number, items, total_cents, subtotal_cents, shipping_cents, method, buyer_name, label_error, tracking_number, stock_problem')
     .eq('id', orderId).maybeSingle();
   if (!o) return;
   const items = (o.items as { title: string; qty: number }[]).map((it) => (it.qty > 1 ? `${it.qty}× ${it.title}` : it.title)).join(', ');
   const label = o.tracking_number ? 'Label ready' : o.label_error ? 'Label needs attention' : 'Making the label';
   await notifyLedger('orders', {
-    title: `New order: ${money(o.total_cents ?? o.subtotal_cents + o.shipping_cents)}`,
-    body: `${o.buyer_name ?? 'Someone'} bought ${items}. ${o.method === 'envelope' ? 'Envelope' : 'Package'} · ${label}.`,
+    title: `${o.stock_problem ? '⚠️ ' : ''}New order: ${money(o.total_cents ?? o.subtotal_cents + o.shipping_cents)}`,
+    body: `${o.buyer_name ?? 'Someone'} bought ${items}. ${o.method === 'envelope' ? 'Envelope' : 'Package'} · ${label}.${o.stock_problem ? ` ${o.stock_problem}` : ''}`,
     tag: `order-${o.order_number}`,
   });
 }
 
 /**
- * Coupons only count once paid, so several people can be at checkout with the last use.
- * When this payment uses it up, close everyone else's checkout with that code: expire
- * their Stripe page (so it can't be paid) and let their cards go.
+ * Limited coupons are claimed when checkout starts, so other checkouts holding a live claim
+ * are legitimate and left alone. When this payment uses the code up, close any other checkout
+ * with that code that has no live claim (started before claims existed, or whose claim lapsed):
+ * expire its Stripe page (so it can't be paid) and let its cards go.
  */
 async function closeUsedUpCoupon(code: string, paidOrderId: string) {
   try {
@@ -186,7 +187,8 @@ async function closeUsedUpCoupon(code: string, paidOrderId: string) {
     const { data: used } = await db.rpc('shop_coupon_uses', { p_code: code });
     if ((used ?? 0) < c.max_uses) return;
     const { data: open } = await db.from('shop_orders').select('id, stripe_session_id')
-      .eq('coupon_code', code).eq('status', 'pending').neq('id', paidOrderId);
+      .eq('coupon_code', code).eq('status', 'pending').neq('id', paidOrderId)
+      .or(`coupon_claimed_until.is.null,coupon_claimed_until.lt.${new Date().toISOString()}`);
     for (const o of open ?? []) {
       if (o.stripe_session_id) {
         try {

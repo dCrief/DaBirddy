@@ -10,6 +10,10 @@
  *
  * Prices, stock and shipping always come from the database; the browser only
  * sends ids and quantities. Cards aren't held while the buyer pays.
+ *
+ * A coupon with a use limit is claimed when checkout starts (shop_coupon_claim, which locks the
+ * coupon row), so two buyers can't both redeem the last use. The claim lapses when the Stripe page
+ * expires (~31 min) or the order is cancelled (released, failed, or closed by the webhook).
  * Deploy with --no-verify-jwt.
  *
  * Env: STRIPE_SECRET_KEY, SHOP_CARDS_URL (default https://dabirddy.com/cards)
@@ -90,6 +94,11 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Set once the order row exists. If anything fails before the Stripe page is made, the order is
+  // cancelled so it doesn't keep a coupon claim.
+  let orderId: string | null = null;
+  let sessionMade = false;
+
   try {
     if (typeof release === 'string' && /^[0-9a-f-]{36}$/i.test(release)) await releaseOrder(release);
 
@@ -126,12 +135,14 @@ Deno.serve(async (req) => {
 
     // Coupons come off the cards at their listed price only, never off an accepted or countered offer.
     let discount = 0;
+    let limited = false;
     if (couponCode) {
       if (fromOfferPage) return json(req, { error: 'Coupons can’t be used on accepted offers.', badCoupon: true }, 409);
       const { data: c } = await db.from('shop_coupons')
         .select('code, percent_off, max_off_cents, amount_off_cents, min_subtotal_cents, max_uses, active').eq('code', couponCode).maybeSingle();
       if (!c || !c.active) return json(req, { error: 'That coupon code isn’t valid.', badCoupon: true }, 409);
       if (c.max_uses) {
+        limited = true;
         const { data: used } = await db.rpc('shop_coupon_uses', { p_code: c.code });
         if ((used ?? 0) >= c.max_uses) return json(req, { error: 'That coupon has been used up.', badCoupon: true }, 409);
       }
@@ -151,14 +162,27 @@ Deno.serve(async (req) => {
       .select('id, order_number')
       .single();
     if (oe) throw oe;
+    orderId = order.id;
+
+    // Claim a use of a limited coupon before sending the buyer to Stripe.
+    if (discount && limited) {
+      const { data: claimed, error: ce } = await db.rpc('shop_coupon_claim', { p_code: couponCode, p_order: order.id });
+      if (ce) throw ce;
+      if (!claimed) {
+        await db.from('shop_orders').update({ status: 'cancelled' }).eq('id', order.id);
+        orderId = null;
+        return json(req, { error: 'That coupon has been used up.', badCoupon: true }, 409);
+      }
+    }
 
     // Checks the cards are still for sale. Nothing is held: cards stay on the site until someone pays
     // (the webhook then closes other checkouts with a card that just sold out).
     const { error: re } = await db.rpc('shop_reserve', { p_order: order.id, p_minutes: 0 });
     if (re) {
       await db.from('shop_orders').update({ status: 'cancelled' }).eq('id', order.id);
+      orderId = null;
       const m = /unavailable:([0-9a-f-]{36})/i.exec(re.message);
-      if (m) return json(req, { error: 'One of these cards is in someone else’s checkout or just sold. It’s been removed from your cart.', unavailable: [m[1]] }, 409);
+      if (m) return json(req, { error: 'One of these cards just sold. It’s been removed from your cart.', unavailable: [m[1]] }, 409);
       throw re;
     }
 
@@ -207,11 +231,16 @@ Deno.serve(async (req) => {
       success_url: `${base}/success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: fromOfferPage ? `${base}/offer.html?o=${fromOfferPage}` : `${base}/?cart=1`,
     });
+    sessionMade = true;
 
     await db.from('shop_orders').update({ stripe_session_id: session.id }).eq('id', order.id);
     return json(req, { url: session.url, order: order.id });
   } catch (err) {
     console.error(err);
+    if (orderId && !sessionMade) {
+      await db.from('shop_orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', 'pending')
+        .then(() => {}, (e) => console.error('cancel failed', e));
+    }
     return json(req, { error: 'Could not start checkout. Please try again.' }, 502);
   }
 });
