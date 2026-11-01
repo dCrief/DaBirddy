@@ -13,7 +13,7 @@
 
 import Stripe from 'npm:stripe@17';
 import { printful } from '../_shared/shop.ts';
-import { db, logSale, makeLabel } from '../_shared/cards.ts';
+import { db, logSale, makeLabel, syncSaleFee } from '../_shared/cards.ts';
 import { money, notifyLedger } from '../_shared/push.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
@@ -118,12 +118,7 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
 
     const ship = (session as any).collected_information?.shipping_details ?? (session as any).shipping_details;
     const a = ship?.address;
-    let fee: number | null = null;
-    if (session.payment_intent) {
-      const pi = await stripe.paymentIntents.retrieve(String(session.payment_intent), { expand: ['latest_charge.balance_transaction'] }).catch(() => null);
-      const bt = (pi?.latest_charge as any)?.balance_transaction;
-      if (bt && typeof bt === 'object') fee = bt.fee;
-    }
+    const fee = session.payment_intent ? await stripeFee(String(session.payment_intent)) : null;
     await db.from('shop_orders').update({
       stripe_session_id: session.id,
       stripe_payment_intent: session.payment_intent ? String(session.payment_intent) : null,
@@ -150,6 +145,7 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
     if (session.metadata?.coupon) await closeUsedUpCoupon(session.metadata.coupon, orderId);
     await closeSoldOutCheckouts(orderId);
     await logSale(orderId);
+    await syncSaleFee(orderId); // a Stripe retry may bring the fee the first run didn't have
     await makeLabel(orderId);
     if (firstTime) await notifyOrder(orderId);
     return new Response('OK', { status: 200 });
@@ -160,6 +156,20 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
 }
 
 /** "New order" on the partners' phones. */
+/**
+ * The Stripe fee for a payment. Stripe often attaches the balance transaction a moment after
+ * checkout completes, so try a few times; shop-fee-sync fills in any that are still missing.
+ */
+async function stripeFee(paymentIntent: string): Promise<number | null> {
+  for (let i = 0; i < 4; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 1500));
+    const pi = await stripe.paymentIntents.retrieve(paymentIntent, { expand: ['latest_charge.balance_transaction'] }).catch(() => null);
+    const bt = (pi?.latest_charge as any)?.balance_transaction;
+    if (bt && typeof bt === 'object') return bt.fee;
+  }
+  return null;
+}
+
 async function notifyOrder(orderId: string) {
   const { data: o } = await db.from('shop_orders')
     .select('order_number, items, total_cents, subtotal_cents, shipping_cents, method, buyer_name, label_error, tracking_number, stock_problem')

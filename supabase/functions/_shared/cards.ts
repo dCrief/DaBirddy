@@ -341,13 +341,10 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_Yo
  * a partner's own items all theirs. An order mixing owners becomes one entry
  * per owner, with shipping and the Stripe fee shared out by item value. Once per order.
  */
-export async function logSale(orderId: string): Promise<void> {
-  const { data } = await db.from('shop_orders').select('*').eq('id', orderId).single();
-  const o = data as Order | null;
-  if (!o || o.ledger_entry_id || o.total_cents == null) return;
-  const s = await loadSettings();
-  if (!s.payout_partner_id) return;
-  const fee = o.stripe_fee_cents ?? 0;
+type SalePart = { key: string; items: OrderItem[]; part: number; total: number; fee: number };
+
+/** Splits a website order into one ledger line per card owner (shared cards together), pro-rating total and Stripe fee. */
+function splitSale(o: Order, fee: number): SalePart[] {
   const groups = new Map<string, OrderItem[]>();
   for (const it of o.items) {
     const k = it.owner_id ?? 'shared';
@@ -355,18 +352,39 @@ export async function logSale(orderId: string): Promise<void> {
   }
   const keys = [...groups.keys()];
   const sub = o.subtotal_cents || 1;
-  let leftTotal = o.total_cents, leftFee = fee, firstId: string | null = null;
-  for (const [i, k] of keys.entries()) {
-    const items = groups.get(k)!;
+  let leftTotal = o.total_cents!, leftFee = fee;
+  return keys.map((key, i) => {
+    const items = groups.get(key)!;
     const part = items.reduce((n, it) => n + it.price_cents * it.qty, 0);
     const last = i === keys.length - 1;
-    const total = last ? leftTotal : Math.round((o.total_cents * part) / sub);
+    const total = last ? leftTotal : Math.round((o.total_cents! * part) / sub);
     const f = last ? leftFee : Math.round((fee * part) / sub);
     leftTotal -= total;
     leftFee -= f;
-    const net = (total - f) / 100;
+    return { key, items, part, total, fee: f };
+  });
+}
+
+const saleNote = (o: Order, p: SalePart, parts: number, fee: number) =>
+  `Order ${o.order_number} · cards $${usd(p.part)}${parts > 1 ? ` (part of $${usd(o.subtotal_cents)})` : ''} + shipping${fee ? ` · Stripe fee $${usd(p.fee)}` : ''}`;
+
+/**
+ * Logs a website sale for the payout partner (David, whose Stripe account is paid). Amounts are net of
+ * the Stripe fee, so the fee comes off David's cash and off each owner's share of the sale.
+ */
+export async function logSale(orderId: string): Promise<void> {
+  const { data } = await db.from('shop_orders').select('*').eq('id', orderId).single();
+  const o = data as Order | null;
+  if (!o || o.ledger_entry_id || o.total_cents == null) return;
+  const s = await loadSettings();
+  if (!s.payout_partner_id) return;
+  const fee = o.stripe_fee_cents ?? 0;
+  const parts = splitSale(o, fee);
+  let firstId: string | null = null;
+  for (const p of parts) {
+    const net = (p.total - p.fee) / 100;
     const id = crypto.randomUUID();
-    const names = items.map((it) => (it.qty > 1 ? `${it.qty}× ${it.title}` : it.title)).join(', ');
+    const names = p.items.map((it) => (it.qty > 1 ? `${it.qty}× ${it.title}` : it.title)).join(', ');
     const desc = `Website ${o.order_number}: ${names}`;
     const { error } = await db.from('entries').insert({
       id,
@@ -374,13 +392,13 @@ export async function logSale(orderId: string): Promise<void> {
       kind: 'sell',
       partner_id: s.payout_partner_id,
       amount: net,
-      owner_id: k === 'shared' ? null : k,
-      fee: f / 100,
+      owner_id: p.key === 'shared' ? null : p.key,
+      fee: p.fee / 100,
       platform: 'DaBirddy.com',
       description: desc.length > 200 ? desc.slice(0, 197) + '…' : desc,
-      note: `Order ${o.order_number} · cards $${usd(part)}${keys.length > 1 ? ` (part of $${usd(o.subtotal_cents)})` : ''} + shipping${fee ? ` · Stripe fee $${usd(f)}` : ''}`,
+      note: saleNote(o, p, parts.length, fee),
       source: 'import',
-      photos: items.map((it) => it.photo).filter(Boolean),
+      photos: p.items.map((it) => it.photo).filter(Boolean),
       payments: [{ method: 'payout', amount: net }],
       created_by: s.payout_partner_id,
     });
@@ -391,6 +409,40 @@ export async function logSale(orderId: string): Promise<void> {
     firstId ??= id;
   }
   await db.from('shop_orders').update({ ledger_entry_id: firstId }).eq('id', o.id);
+}
+
+/**
+ * Stripe often hasn't settled the fee when the payment webhook runs, so a sale can be logged with no fee.
+ * Once the order has its fee, this takes it off the sale's ledger lines. Lines someone edited by hand are left alone.
+ */
+export async function syncSaleFee(orderId: string): Promise<boolean> {
+  const { data } = await db.from('shop_orders').select('*').eq('id', orderId).single();
+  const o = data as Order | null;
+  if (!o || !o.ledger_entry_id || o.total_cents == null || o.stripe_fee_cents == null) return false;
+  const { data: rows } = await db.from('entries').select('id, owner_id, amount, fee')
+    .eq('kind', 'sell').is('deleted_at', null).like('note', `Order ${o.order_number} ·%`);
+  if (!rows?.length) return false;
+  const logged = rows.reduce((n, r) => n + Math.round(Number(r.fee) * 100), 0);
+  if (logged === o.stripe_fee_cents) return false;
+  const before = splitSale(o, logged), after = splitSale(o, o.stripe_fee_cents);
+  if (before.length !== rows.length) return false;
+  let changed = false;
+  for (const [i, p] of after.entries()) {
+    const owner = p.key === 'shared' ? null : p.key;
+    const row = rows.find((r) => r.owner_id === owner);
+    if (!row || Math.round(Number(row.amount) * 100) !== before[i].total - before[i].fee) continue;
+    const net = (p.total - p.fee) / 100;
+    const { error } = await db.from('entries').update({
+      amount: net,
+      fee: p.fee / 100,
+      payments: [{ method: 'payout', amount: net }],
+      note: saleNote(o, p, after.length, o.stripe_fee_cents),
+    }).eq('id', row.id);
+    if (error) console.error('fee sync', o.order_number, error.message);
+    else changed = true;
+  }
+  if (changed) console.log(`fee sync ${o.order_number}: Stripe fee $${usd(o.stripe_fee_cents)}`);
+  return changed;
 }
 
 async function logPostage(o: Order, cents: number, partnerId: string, carrier: string) {
