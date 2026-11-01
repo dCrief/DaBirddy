@@ -635,7 +635,32 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     try { var c = JSON.parse(localStorage.getItem(CART_KEY) || '[]'); return Array.isArray(c) ? c.filter(function (l) { return l && typeof l.id === 'string' && l.qty > 0; }) : []; }
     catch (e) { return []; }
   }
-  function saveCart() { try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {} renderCart(); }
+  function saveCart() { try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {} renderCart(); syncCart(); }
+
+  // An anonymous copy of the cart (card ids and quantities only) so we can see what people are eyeing.
+  var syncTimer = null;
+  function cartId() {
+    try {
+      var id = localStorage.getItem('dabirddy_cart_id');
+      if (!id && window.crypto && crypto.randomUUID) { id = crypto.randomUUID(); localStorage.setItem('dabirddy_cart_id', id); }
+      return id;
+    } catch (e) { return null; }
+  }
+  function syncCart(orderId) {
+    clearTimeout(syncTimer);
+    var send = function () {
+      var id = cartId(); if (!id) return;
+      var body = { cart_id: id, items: cart.map(function (l) { return { id: l.id, qty: l.qty, offer: !!l.offer }; }), coupon: (typeof coupon !== 'undefined' && coupon) ? coupon.code : null };
+      var sig = JSON.stringify(body);
+      var last = null; try { last = localStorage.getItem('dabirddy_cart_sent'); } catch (e) {}
+      if (!orderId && (sig === last || (!last && !cart.length))) return;
+      if (orderId) body.order_id = orderId;
+      try { localStorage.setItem('dabirddy_cart_sent', sig); } catch (e) {}
+      fetch(SHOP_API + '/card-cart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true }).catch(function () {});
+    };
+    // At checkout, send right away (the page is about to go to Stripe); otherwise wait for edits to settle.
+    if (orderId) send(); else syncTimer = setTimeout(send, 1500);
+  }
   function byId(id) { return cards.filter(function (c) { return c.id === id; })[0]; }
   var cartNotice = '';
   // Drop cards that sold since they were added, and cap quantities at what's left.
@@ -751,6 +776,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
       .then(function (x) {
         if (x.ok && x.d.url) {
           try { localStorage.setItem(LAST_KEY, x.d.order); } catch (e) {}
+          syncCart(x.d.order);
           location.href = x.d.url;
           return;
         }
@@ -783,6 +809,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     coupon = c;
     try { c ? localStorage.setItem(COUPON_KEY, JSON.stringify(c)) : localStorage.removeItem(COUPON_KEY); } catch (e) {}
     renderCart();
+    syncCart();
   }
   function renderCoupon(t) {
     $('couponForm').hidden = !!coupon;
