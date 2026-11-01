@@ -147,6 +147,7 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
     if (offerIds.length) {
       await db.from('shop_offers').update({ status: 'paid', order_id: orderId }).in('id', offerIds);
     }
+    if (session.metadata?.coupon) await closeUsedUpCoupon(session.metadata.coupon, orderId);
     await logSale(orderId);
     await makeLabel(orderId);
     if (firstTime) await notifyOrder(orderId);
@@ -170,4 +171,36 @@ async function notifyOrder(orderId: string) {
     body: `${o.buyer_name ?? 'Someone'} bought ${items}. ${o.method === 'envelope' ? 'Envelope' : 'Package'} · ${label}.`,
     tag: `order-${o.order_number}`,
   });
+}
+
+/**
+ * Coupons only count once paid, so several people can be at checkout with the last use.
+ * When this payment uses it up, close everyone else's checkout with that code: expire
+ * their Stripe page (so it can't be paid) and let their cards go.
+ */
+async function closeUsedUpCoupon(code: string, paidOrderId: string) {
+  try {
+    const { data: c } = await db.from('shop_coupons').select('max_uses').eq('code', code).maybeSingle();
+    if (!c?.max_uses) return;
+    const { data: used } = await db.rpc('shop_coupon_uses', { p_code: code });
+    if ((used ?? 0) < c.max_uses) return;
+    const { data: open } = await db.from('shop_orders').select('id, stripe_session_id')
+      .eq('coupon_code', code).eq('status', 'pending').neq('id', paidOrderId);
+    for (const o of open ?? []) {
+      if (o.stripe_session_id) {
+        try {
+          await stripe.checkout.sessions.expire(o.stripe_session_id);
+        } catch {
+          // Already expired, or paid this very moment (its own webhook will handle it).
+          const s = await stripe.checkout.sessions.retrieve(o.stripe_session_id).catch(() => null);
+          if (s?.payment_status === 'paid') continue;
+        }
+      }
+      await db.from('shop_holds').delete().eq('order_id', o.id);
+      await db.from('shop_orders').update({ status: 'cancelled' }).eq('id', o.id).eq('status', 'pending');
+    }
+    console.log(`coupon ${code} used up: closed ${open?.length ?? 0} other checkouts`);
+  } catch (err) {
+    console.error('closeUsedUpCoupon', code, err);
+  }
 }
