@@ -148,6 +148,7 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
       await db.from('shop_offers').update({ status: 'paid', order_id: orderId }).in('id', offerIds);
     }
     if (session.metadata?.coupon) await closeUsedUpCoupon(session.metadata.coupon, orderId);
+    await closeSoldOutCheckouts(orderId);
     await logSale(orderId);
     await makeLabel(orderId);
     if (firstTime) await notifyOrder(orderId);
@@ -202,5 +203,38 @@ async function closeUsedUpCoupon(code: string, paidOrderId: string) {
     console.log(`coupon ${code} used up: closed ${open?.length ?? 0} other checkouts`);
   } catch (err) {
     console.error('closeUsedUpCoupon', code, err);
+  }
+}
+
+/**
+ * Cards aren't held at checkout, so others may be paying for a card this order just bought.
+ * Close their checkouts (expire the Stripe page) for any card that's now sold out.
+ */
+async function closeSoldOutCheckouts(paidOrderId: string) {
+  try {
+    const { data: paid } = await db.from('shop_orders').select('items').eq('id', paidOrderId).maybeSingle();
+    const ids = ((paid?.items ?? []) as { listing_id: string }[]).map((it) => it.listing_id);
+    if (!ids.length) return;
+    const { data: gone } = await db.from('shop_listings').select('id').in('id', ids).lte('quantity', 0);
+    const soldOut = new Set((gone ?? []).map((l) => l.id));
+    if (!soldOut.size) return;
+    const { data: open } = await db.from('shop_orders').select('id, items, stripe_session_id').eq('status', 'pending').neq('id', paidOrderId);
+    let closed = 0;
+    for (const o of open ?? []) {
+      if (!((o.items ?? []) as { listing_id: string }[]).some((it) => soldOut.has(it.listing_id))) continue;
+      if (o.stripe_session_id) {
+        try {
+          await stripe.checkout.sessions.expire(o.stripe_session_id);
+        } catch {
+          const s = await stripe.checkout.sessions.retrieve(o.stripe_session_id).catch(() => null);
+          if (s?.payment_status === 'paid') continue;
+        }
+      }
+      await db.from('shop_orders').update({ status: 'cancelled' }).eq('id', o.id).eq('status', 'pending');
+      closed++;
+    }
+    if (closed) console.log(`closed ${closed} checkouts with cards that just sold`);
+  } catch (err) {
+    console.error('closeSoldOutCheckouts', err);
   }
 }

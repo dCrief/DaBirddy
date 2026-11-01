@@ -9,8 +9,7 @@
  * it can't block them or be paid later.
  *
  * Prices, stock and shipping always come from the database; the browser only
- * sends ids and quantities. The cards are held for 35 minutes while the buyer
- * pays (Stripe's page expires after 31), so nobody else can buy them meanwhile.
+ * sends ids and quantities. Cards aren't held while the buyer pays.
  * Deploy with --no-verify-jwt.
  *
  * Env: STRIPE_SECRET_KEY, SHOP_CARDS_URL (default https://dabirddy.com/cards)
@@ -153,7 +152,9 @@ Deno.serve(async (req) => {
       .single();
     if (oe) throw oe;
 
-    const { error: re } = await db.rpc('shop_reserve', { p_order: order.id, p_minutes: 35 });
+    // Checks the cards are still for sale. Nothing is held: cards stay on the site until someone pays
+    // (the webhook then closes other checkouts with a card that just sold out).
+    const { error: re } = await db.rpc('shop_reserve', { p_order: order.id, p_minutes: 0 });
     if (re) {
       await db.from('shop_orders').update({ status: 'cancelled' }).eq('id', order.id);
       const m = /unavailable:([0-9a-f-]{36})/i.exec(re.message);

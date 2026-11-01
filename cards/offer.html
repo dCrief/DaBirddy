@@ -109,7 +109,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
 
     var pay = $('payBtn');
     if (pay) pay.addEventListener('click', function () {
-      pay.disabled = true; pay.textContent = 'Holding your card…';
+      pay.disabled = true; pay.textContent = 'Starting checkout…';
       var last = null; try { last = localStorage.getItem('dabirddy_cards_last_order'); } catch (e) {}
       fetch(SHOP_API + '/card-checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offer: token, release: last || undefined }) })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })

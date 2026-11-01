@@ -339,7 +339,7 @@
     <div class="sum"><span id="shipLabel">Shipping</span><span id="sumShip">$0</span></div>
     <div class="sum total"><span>Total</span><span id="sumTotal">$0</span></div>
     <button class="btn primary" id="checkoutBtn">Checkout</button>
-    <p class="fine">Secure payment by Stripe. Your cards are held for you for 30 minutes while you check out. US shipping only.</p>
+    <p class="fine">Secure payment by Stripe. Cards go to whoever pays first. US shipping only.</p>
   </div>
 </aside>
 
@@ -764,7 +764,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var btn = this;
     if (!cart.length) return;
     btn.disabled = true;
-    btn.textContent = 'Holding your cards…';
+    btn.textContent = 'Starting checkout…';
     var last = null;
     try { last = localStorage.getItem(LAST_KEY); } catch (e) {}
     fetch(SHOP_API + '/card-checkout', {
