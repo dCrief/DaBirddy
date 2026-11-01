@@ -94,7 +94,7 @@ async function tcg(order: string): Promise<Check> {
 
 async function shipments(): Promise<Shipment[]> {
   const since = new Date(Date.now() - 45 * DAY).toISOString();
-  const [orders, labels, buys, settings] = await Promise.all([
+  const [orders, labels, buys, settings, sells] = await Promise.all([
     db.from('shop_orders').select('id, order_number, method, tracking_number, buyer_name, items, ship_to, created_at, status')
       .not('tracking_number', 'is', null).neq('status', 'cancelled').gt('created_at', since),
     db.from('shipping_labels').select('id, ref, method, tracking_number, ship_to, description, created_at')
@@ -102,7 +102,11 @@ async function shipments(): Promise<Shipment[]> {
     db.from('entries').select('id, description, tracking, occurred_on, created_at')
       .eq('awaiting_delivery', true).is('deleted_at', null).not('tracking', 'is', null),
     db.from('shop_settings').select('from_city, from_state').eq('id', 1).maybeSingle(),
+    // Sells with a tracking number typed in: labels made outside the app.
+    db.from('entries').select('id, description, tracking, created_at, customer_id, customers(name, address)')
+      .eq('kind', 'sell').is('deleted_at', null).not('tracking', 'is', null).gt('created_at', since),
   ]);
+  if (sells.error) console.error('sells', sells.error.message);
   const home = spot({ city: settings.data?.from_city, state: settings.data?.from_state });
   const out: Shipment[] = [];
   for (const o of orders.data ?? []) {
@@ -127,6 +131,15 @@ async function shipments(): Promise<Shipment[]> {
     const tn = String(e.tracking).replace(/\s+/g, '');
     if (tn.length < 8) continue;
     out.push({ key: `entry:${e.id}`, direction: 'in', tracking: tn, started_at: e.created_at, label: e.description, carrier: carrierOf(tn), from: null, to: home });
+  }
+  for (const e of sells.data ?? []) {
+    const tn = String(e.tracking).replace(/\s+/g, '');
+    if (tn.length < 8) continue;
+    const c = (Array.isArray(e.customers) ? e.customers[0] : e.customers) as { name?: string; address?: Place } | null;
+    out.push({
+      key: `sell:${e.id}`, direction: 'out', tracking: tn, started_at: e.created_at,
+      label: [c?.name, e.description].filter(Boolean).join(' · '), carrier: carrierOf(tn), from: home, to: spot(c?.address),
+    });
   }
   return out;
 }
