@@ -445,13 +445,19 @@ export async function syncSaleFee(orderId: string): Promise<boolean> {
   return changed;
 }
 
+/** Whose postage it is: the owner when every card in the order is one partner's (they get the buyer's shipping too), else shared. */
+function postageOwner(o: Order): string | null {
+  const owners = new Set(o.items.map((it) => it.owner_id ?? null));
+  return owners.size === 1 ? [...owners][0] : null;
+}
+
 async function logPostage(o: Order, cents: number, partnerId: string, carrier: string) {
   const { error } = await db.from('entries').insert({
     occurred_on: today(),
     kind: 'expense',
     partner_id: partnerId,
     amount: -cents / 100,
-    owner_id: null, // David's accounts pay for the label, but website postage is a shared cost (50/50)
+    owner_id: postageOwner(o), // the cards' owner when they're all one partner's; otherwise shared (50/50)
     platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
     description: `Postage for website ${o.order_number}`,
     note: `${o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`} · tracking on the order`,
