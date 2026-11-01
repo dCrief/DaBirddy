@@ -399,7 +399,7 @@ async function logPostage(o: Order, cents: number, partnerId: string, carrier: s
     kind: 'expense',
     partner_id: partnerId,
     amount: -cents / 100,
-    owner_id: partnerId, // David's accounts pay for every label, so postage is all his
+    owner_id: null, // David's accounts pay for the label, but website postage is a shared cost (50/50)
     platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
     description: `Postage for website ${o.order_number}`,
     note: `${o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`} · tracking on the order`,
