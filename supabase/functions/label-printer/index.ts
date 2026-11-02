@@ -9,6 +9,7 @@
  */
 
 import { db } from '../_shared/cards.ts';
+import { portrait } from '../_shared/portrait.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
@@ -20,6 +21,22 @@ async function authorized(req: Request) {
   const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
   const { data } = await db.rpc('printer_token_ok', { p_hash: hash });
   return data === true;
+}
+
+// Envelope labels (TCG Tracking) are saved 6x4 landscape; turn them 4x6 portrait once,
+// before the first print, so the Rollo prints them like any other 4x6 label.
+async function makePortrait(path: string) {
+  try {
+    const { data } = await db.storage.from('shop-labels').download(path);
+    if (!data) return;
+    const turned = await portrait(new Uint8Array(await data.arrayBuffer()));
+    if (!turned) return;
+    const { error } = await db.storage.from('shop-labels').upload(path, turned, { contentType: 'application/pdf', upsert: true });
+    if (error) console.error('portrait upload', path, error.message);
+    else console.log('turned portrait', path);
+  } catch (err) {
+    console.error('makePortrait', path, err);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -49,6 +66,7 @@ Deno.serve(async (req) => {
       if (o.printed_at && o.printed_at >= o.print_requested_at) continue;
       let url = o.label_url as string | null;
       if (!url && o.label_path) {
+        await makePortrait(o.label_path);
         const { data: s } = await db.storage.from('shop-labels').createSignedUrl(o.label_path, 600);
         url = s?.signedUrl ?? null;
       }
