@@ -75,6 +75,16 @@ Deno.serve(async (req) => {
       ...(orders.data ?? []).map((o) => ({ ...o, name: o.order_number, slip: o as SlipOrder | null })),
       ...(labels.data ?? []).map((l) => ({ ...l, name: l.ref, slip: null })),
     ].sort((a, b) => a.print_requested_at.localeCompare(b.print_requested_at));
+    // Stock numbers for the packing slips.
+    const ids = rows.flatMap((r) => (r.slip?.items ?? []).map((it) => it.listing_id)).filter(Boolean) as string[];
+    const stock = new Map<string, string>();
+    if (ids.length) {
+      const { data } = await db.from('shop_listings').select('id, inventory_no').in('id', ids);
+      for (const l of data ?? []) if (l.inventory_no) stock.set(l.id, l.inventory_no);
+    }
+    for (const r of rows) {
+      if (r.slip) r.slip = { ...r.slip, items: r.slip.items.map((it) => ({ ...it, inventory_no: it.listing_id ? stock.get(it.listing_id) ?? null : null })) };
+    }
     const jobs = [];
     for (const o of rows) {
       if (o.printed_at && o.printed_at >= o.print_requested_at) continue;

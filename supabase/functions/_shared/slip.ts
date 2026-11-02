@@ -5,7 +5,7 @@ import { PDFDocument, PDFFont, rgb, StandardFonts } from 'npm:pdf-lib@1.17.1';
 export type SlipOrder = {
   order_number: string;
   created_at: string;
-  items: { title: string; set: string | null; number: string | null; price_cents: number; qty: number }[];
+  items: { title: string; set: string | null; number: string | null; price_cents: number; qty: number; listing_id?: string; inventory_no?: string | null }[];
   subtotal_cents: number;
   shipping_cents: number;
   total_cents: number | null;
@@ -30,7 +30,8 @@ const THANKS = [
 ];
 
 const W = 288, H = 432, M = 18;
-const ink = rgb(0, 0, 0), grey = rgb(0.35, 0.35, 0.35);
+// Thermal printers dither grey into faint dots, so everything prints solid black.
+const ink = rgb(0, 0, 0), grey = ink;
 const usd = (c: number) => (c < 0 ? '-' : '') + '$' + (Math.abs(c) / 100).toFixed(2);
 
 /** Helvetica only covers Windows-1252; swap anything else for a close character. */
@@ -101,13 +102,13 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
   text('DaBirddy', M, 22, bold);
   right('Packing slip', 10, bold, grey);
   y -= 13;
-  text('dabirddy.com/cards', M, 9, reg, grey);
+  text('dabirddy.com/cards', M, 10, reg, grey);
   const date = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(o.created_at));
-  right(date, 9, reg, grey);
+  right(date, 10, reg, grey);
   rule();
   y -= 4;
-  text('Order', M, 8, reg, grey);
-  right('Ship to', 8, reg, grey);
+  text('Order', M, 9, reg, grey);
+  right('Ship to', 9, reg, grey);
   y -= 12;
   text(o.order_number, M, 11, bold);
   right(o.ship_to?.name || o.buyer_name || '', 11, bold);
@@ -116,21 +117,32 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
   // Items
   const priceW = 70;
   const count = o.items.reduce((n, it) => n + it.qty, 0);
-  text(`${count} item${count === 1 ? '' : 's'}`, M, 8, reg, grey);
-  right('Price', 8, reg, grey);
+  text(`${count} item${count === 1 ? '' : 's'}`, M, 9, reg, grey);
+  right('Price', 9, reg, grey);
   y -= 14;
   for (const it of o.items) {
     const title = wrap(bold, 10, clean(bold, it.title), W - 2 * M - priceW);
     const meta = [it.set, it.number ? `#${it.number}` : null].filter(Boolean).join(' · ');
-    room(title.length * 12 + (meta ? 11 : 0) + 8);
+    room(title.length * 12 + (meta || it.inventory_no ? 12 : 0) + 8);
     title.forEach((line, i) => {
       text(line, M, 10, bold);
       if (i === 0) right(it.qty > 1 ? `${it.qty} x ${usd(it.price_cents)}` : usd(it.price_cents), 10, reg);
       y -= 12;
     });
-    if (meta) {
-      text(meta, M, 8, reg, grey);
-      y -= 11;
+    // Stock # first, in bold, so the right card is easy to pull.
+    if (meta || it.inventory_no) {
+      let x = M;
+      if (it.inventory_no) {
+        const stock = clean(bold, `Stock ${it.inventory_no}`);
+        text(stock, x, 9, bold);
+        x += bold.widthOfTextAtSize(stock, 9) + (meta ? 6 : 0);
+      }
+      if (meta) {
+        let m = clean(reg, meta);
+        while (m.length > 4 && reg.widthOfTextAtSize(m, 9) > W - M - x) m = m.slice(0, -2) + '…';
+        text(m.replace(/……$/, '…'), x, 9, reg, grey);
+      }
+      y -= 12;
     }
     y -= 5;
   }
@@ -160,7 +172,7 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
     y -= 14;
   }
   const sig = '- DaBirddy';
-  page.drawText(sig, { x: (W - reg.widthOfTextAtSize(sig, 9)) / 2, y: M + 8, size: 9, font: reg, color: grey });
+  page.drawText(sig, { x: (W - bold.widthOfTextAtSize(sig, 10)) / 2, y: M + 8, size: 10, font: bold, color: ink });
 
   return await doc.save();
 }
