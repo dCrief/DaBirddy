@@ -10,6 +10,7 @@
 
 import { db } from '../_shared/cards.ts';
 import { portrait } from '../_shared/portrait.ts';
+import { packingSlip, type SlipOrder } from '../_shared/slip.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
@@ -39,6 +40,19 @@ async function makePortrait(path: string) {
   }
 }
 
+async function slipFor(o: SlipOrder): Promise<string | null> {
+  try {
+    const path = `slips/${o.order_number}.pdf`;
+    const { error } = await db.storage.from('shop-labels').upload(path, await packingSlip(o), { contentType: 'application/pdf', upsert: true });
+    if (error) throw error;
+    const { data } = await db.storage.from('shop-labels').createSignedUrl(path, 600);
+    return data?.signedUrl ?? null;
+  } catch (err) {
+    console.error('packing slip', o.order_number, err);
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (!(await authorized(req))) return json({ error: 'Unauthorized' }, 401);
 
@@ -47,7 +61,7 @@ Deno.serve(async (req) => {
     const since = new Date(Date.now() - 3 * 86400e3).toISOString();
     const [orders, labels] = await Promise.all([
       db.from('shop_orders')
-        .select('id, order_number, print_requested_at, printed_at, label_path, label_url')
+        .select('id, order_number, print_requested_at, printed_at, label_path, label_url, created_at, items, subtotal_cents, shipping_cents, total_cents, coupon_code, buyer_name, ship_to')
         .not('print_requested_at', 'is', null).not('tracking_number', 'is', null)
         .neq('status', 'cancelled').gt('print_requested_at', since).limit(20),
       db.from('shipping_labels')
@@ -58,8 +72,8 @@ Deno.serve(async (req) => {
     if (orders.error) return json({ error: orders.error.message }, 500);
     if (labels.error) return json({ error: labels.error.message }, 500);
     const rows = [
-      ...(orders.data ?? []).map((o) => ({ ...o, name: o.order_number })),
-      ...(labels.data ?? []).map((l) => ({ ...l, name: l.ref })),
+      ...(orders.data ?? []).map((o) => ({ ...o, name: o.order_number, slip: o as SlipOrder | null })),
+      ...(labels.data ?? []).map((l) => ({ ...l, name: l.ref, slip: null })),
     ].sort((a, b) => a.print_requested_at.localeCompare(b.print_requested_at));
     const jobs = [];
     for (const o of rows) {
@@ -71,6 +85,12 @@ Deno.serve(async (req) => {
         url = s?.signedUrl ?? null;
       }
       if (url) jobs.push({ id: o.id, order: o.name, requested_at: o.print_requested_at, url });
+      // Website orders: a packing slip right after the label, the first time it prints
+      // (a reprint is just the label).
+      if (url && o.slip && !o.printed_at) {
+        const slipUrl = await slipFor(o.slip);
+        if (slipUrl) jobs.push({ id: o.id, order: `${o.name}-slip`, requested_at: o.print_requested_at, url: slipUrl });
+      }
     }
     return json({ jobs });
   }
