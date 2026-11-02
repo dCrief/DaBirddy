@@ -95,9 +95,8 @@ Deno.serve(async (req) => {
         url = s?.signedUrl ?? null;
       }
       if (url) jobs.push({ id: o.id, order: o.name, requested_at: o.print_requested_at, url });
-      // Website orders: a packing slip right after the label, the first time it prints
-      // (a reprint is just the label).
-      if (url && o.slip && !o.printed_at) {
+      // Website orders: a packing slip right after the label, every time it prints.
+      if (url && o.slip) {
         const slipUrl = await slipFor(o.slip);
         if (slipUrl) jobs.push({ id: o.id, order: `${o.name}-slip`, requested_at: o.print_requested_at, url: slipUrl });
       }
