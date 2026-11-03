@@ -30,7 +30,7 @@ export async function sendThanks(orderId: string): Promise<boolean> {
   if (!key) return false;
   try {
     const { data: o } = await db.from('shop_orders')
-      .select('order_number, items, subtotal_cents, shipping_cents, total_cents, coupon_code, method, buyer_name, buyer_email, ship_to, tracking_number')
+      .select('order_number, status, items, subtotal_cents, shipping_cents, total_cents, coupon_code, method, buyer_name, buyer_email, ship_to, tracking_number')
       .eq('id', orderId).maybeSingle();
     if (!o?.buyer_email) return false;
     const { data: s } = await db.from('shop_settings').select('from_email').eq('id', 1).maybeSingle();
@@ -58,7 +58,7 @@ export async function sendThanks(orderId: string): Promise<boolean> {
 <div style="background:#fff;border-radius:14px;padding:28px 24px">
 <div style="font-size:24px;font-weight:800">DaBirddy</div>
 <h1 style="font-size:20px;margin:18px 0 6px">Thank you, ${esc(first)}!</h1>
-<p style="margin:0 0 6px;color:#333;line-height:1.5">We got your order <b>${esc(o.order_number)}</b> and we’re getting it ready to ship. ${esc(note)}</p>
+<p style="margin:0 0 6px;color:#333;line-height:1.5">${o.status === 'shipped' ? `Your order <b>${esc(o.order_number)}</b> is on its way.` : `We got your order <b>${esc(o.order_number)}</b> and we’re getting it ready to ship.`} ${esc(note)}</p>
 <table style="width:100%;border-collapse:collapse;margin-top:18px">${rows}</table>
 <table style="width:100%;border-collapse:collapse;margin-top:10px">
 ${line('Cards', usd(o.subtotal_cents))}
@@ -76,7 +76,7 @@ ${o.tracking_number ? `<p style="margin:14px 0 0;color:#444">Tracking: ${track ?
     const text = [
       `Thank you, ${first}!`,
       '',
-      `We got your order ${o.order_number} and we're getting it ready to ship. ${note}`,
+      `${o.status === 'shipped' ? `Your order ${o.order_number} is on its way.` : `We got your order ${o.order_number} and we're getting it ready to ship.`} ${note}`,
       '',
       ...items.map((it) => `${it.qty > 1 ? `${it.qty} x ` : ''}${it.title}  ${usd(it.price_cents * it.qty)}`),
       '',
