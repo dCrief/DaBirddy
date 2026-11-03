@@ -212,6 +212,11 @@
     .sum.discount { color: var(--accent3); }
     .promo { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; background: linear-gradient(90deg, rgba(255,77,109,0.18), rgba(255,209,102,0.18)); border-bottom: 1px solid var(--line); color: var(--text); font-size: 0.85rem; font-weight: 600; text-align: center; }
     .promo .i { width: 16px; height: 16px; color: var(--accent2); flex: none; }
+    .sale-bar { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 12px; padding: 10px 16px; background: linear-gradient(90deg, #ff4d6d, #ff8a3d); color: #fff; font-weight: 700; font-size: 0.92rem; text-align: center; }
+    .sale-bar .clock { font-variant-numeric: tabular-nums; background: rgba(0,0,0,0.22); padding: 3px 9px; border-radius: 999px; font-size: 0.82rem; }
+    .sale-bar button { background: #fff; color: #c2183a; border: 0; border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 0.8rem; cursor: pointer; }
+    .badge.sale { background: #ff4d6d; border-color: #ff4d6d; color: #fff; }
+    .t-price s, .price s { color: var(--muted); font-weight: 500; font-size: 0.78em; margin-left: 6px; }
     .notice { background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.3); color: var(--accent2); border-radius: 10px; padding: 10px 12px; font-size: 0.82rem; }
 
     @media (max-width: 760px) {
@@ -228,6 +233,7 @@
 <body>
 
 <div class="promo" role="note"><svg class="i" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/></svg>Code words now can be applied as coupons at checkout</div>
+<div class="sale-bar" id="saleBar" hidden></div>
 
 <header class="topbar">
   <div class="topbar-inner">
@@ -359,7 +365,8 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   var KIND = { single: 'Single', graded: 'Graded card', bundle: 'Bundle', sealed: 'Sealed product', other: 'Collectible' };
   var NEW_DAYS = 7;
   var cards = [];
-  var state = { q: '', cat: 'all', set: 'all', sort: 'new' };
+  var state = { q: '', cat: 'all', set: 'all', sort: 'new', sale: false };
+  var SALE = null, saleTimer = null;
   var open = null;   // card in the sheet
   var photo = 0;
   // Shipping, same rule as the checkout: under $20 of cards (nothing sealed) goes in an envelope.
@@ -397,6 +404,33 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     return '<div class="state"><h2>' + title + '</h2><p>' + body + '</p>' + (actions ? '<div class="actions">' + actions + '</div>' : '') + '</div>';
   }
 
+  // ── Flash sale ──
+  function SALE_PCT(c) { return Math.round((1 - c.price / c.listPrice) * 100); }
+  function showSale() {
+    var bar = $('saleBar');
+    clearInterval(saleTimer);
+    if (!SALE) { bar.hidden = true; return; }
+    var end = new Date(SALE.endsAt).getTime();
+    if (end <= Date.now()) { bar.hidden = true; return; }
+    var n = cards.filter(function (c) { return c.listPrice; }).length;
+    function tick() {
+      var left = Math.max(0, end - Date.now());
+      // Sale over: hide the bar, then reload once the catalog's short cache has caught up.
+      if (!left) { clearInterval(saleTimer); bar.hidden = true; setTimeout(function () { location.reload(); }, 30000); return; }
+      var h = Math.floor(left / 3600e3), m = Math.floor(left / 60e3) % 60, sec = Math.floor(left / 1e3) % 60;
+      var clock = (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + (h ? '' : sec + 's');
+      bar.innerHTML = '<span>⚡ ' + esc(SALE.name) + ': ' + SALE.percent + '% off ' + (SALE.all ? 'everything' : n + ' card' + (n === 1 ? '' : 's')) + '</span>' +
+        '<span class="clock">Ends in ' + clock + '</span>' +
+        (!SALE.all && n ? '<button type="button" id="saleOnly">' + (state.sale ? 'Show all cards' : 'Shop the sale') + '</button>' : '');
+    }
+    tick();
+    bar.hidden = false;
+    saleTimer = setInterval(tick, 1000);
+  }
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'saleOnly') { state.sale = !state.sale; render(); showSale(); }
+  });
+
   function init() {
     readUrl();
     $('q').value = state.q;
@@ -413,6 +447,8 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         if (data.cardsError) throw new Error('cards');
         cards = data.cards || [];
         loaded = true;
+        SALE = data.sale || null;
+        showSale();
         if (data.shipping) {
           SHIP = { envelope: data.shipping.envelope, pkg: data.shipping.package, cutoff: data.shipping.envelopeUnder, maxCards: data.shipping.maxCards || 5 };
           OFFERS = { on: data.shipping.offers !== false, min: data.shipping.offerMinPercent || 50 };
@@ -441,6 +477,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var list = cards.filter(function (c) {
       if (state.cat !== 'all' && c.category !== state.cat) return false;
       if (state.set !== 'all' && (c.set || '') !== state.set) return false;
+      if (state.sale && !c.listPrice) return false;
       if (!words.length) return true;
       var hay = [c.title, c.variant, c.set, c.number, c.number ? '#' + c.number : '', CATEGORY[c.category], c.description].join(' ').toLowerCase();
       return words.every(function (w) { return hay.indexOf(w) !== -1; });
@@ -489,7 +526,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     }
     show('<div class="grid">' + list.map(function (c, i) {
       var front = c.photos[0], back = c.photos[1];
-      var badges = (isNew(c) ? '<span class="badge new">New</span>' : '') +
+      var badges = (c.listPrice ? '<span class="badge sale">' + SALE_PCT(c) + '% off</span>' : '') + (isNew(c) ? '<span class="badge new">New</span>' : '') +
         (c.category === 'graded' ? '<span class="badge">Graded</span>' : '') +
         (c.category === 'sealed' ? '<span class="badge">Sealed</span>' : '') +
         (c.quantity > 1 ? '<span class="badge">' + c.quantity + ' available</span>' : '');
@@ -501,7 +538,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         '</div>' +
         '<div class="tile-body"><div class="t-name">' + esc(c.title) + '</div>' +
         (sub(c) ? '<div class="t-set">' + esc(sub(c)) + '</div>' : '') +
-        '<div class="t-price">' + money(c.price) + '</div></div></button>';
+        '<div class="t-price">' + money(c.price) + (c.listPrice ? '<s>' + money(c.listPrice) + '</s>' : '') + '</div></div></button>';
     }).join('') + '</div>');
   }
 
@@ -537,7 +574,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     $('cKind').textContent = KIND[c.category] || '';
     $('cName').textContent = c.title;
     $('cSub').textContent = sub(c);
-    $('cPrice').innerHTML = money(c.price) + (c.quantity > 1 ? '<span class="qty-left">' + c.quantity + ' available</span>' : '');
+    $('cPrice').innerHTML = money(c.price) + (c.listPrice ? '<s>' + money(c.listPrice) + '</s>' : '') + (c.quantity > 1 ? '<span class="qty-left">' + c.quantity + ' available</span>' : '');
     $('cDesc').textContent = c.description || '';
     $('cDesc').hidden = !c.description;
     $('askBtn').href = 'https://ig.me/m/dabirddygaming';
@@ -708,7 +745,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         return '<div class="line">' + (img ? '<img src="' + esc(img.grid) + '" alt="">' : '<img alt="">') +
           '<div class="line-info"><div class="line-name">' + esc(c.title) + '</div>' + (sub(c) ? '<div class="line-sub">' + esc(sub(c)) + '</div>' : '') +
           '<div class="line-row"><span class="line-price">' + money(linePrice(l, c)) +
-          (l.offer ? ' <s class="was">' + money(c.price) + '</s> <span class="offer-tag">Your offer</span>' : '') + '</span>' +
+          (l.offer ? ' <s class="was">' + money(c.price) + '</s> <span class="offer-tag">Your offer</span>' : c.listPrice ? ' <s class="was">' + money(c.listPrice) + '</s> <span class="offer-tag">Sale</span>' : '') + '</span>' +
           (c.quantity > 1 && !l.offer ? '<div class="qty"><button data-dec="' + c.id + '" aria-label="One fewer">&minus;</button><span>' + l.qty + '</span><button data-inc="' + c.id + '" aria-label="One more"' + (l.qty >= c.quantity ? ' disabled' : '') + '>+</button></div>' : '') +
           '<button class="remove" data-rm="' + c.id + '">Remove</button></div></div></div>';
       }).join('');

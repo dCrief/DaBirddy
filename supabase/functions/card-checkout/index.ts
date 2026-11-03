@@ -22,6 +22,7 @@
 import Stripe from 'npm:stripe@17';
 import { corsHeaders, json } from '../_shared/shop.ts';
 import { db, loadSettings, shippingFor, type OrderItem } from '../_shared/cards.ts';
+import { activeSale, salePrice } from '../_shared/sale.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', { httpClient: Stripe.createFetchHttpClient() });
 const MAX_LINES = 30;
@@ -116,15 +117,20 @@ Deno.serve(async (req) => {
     const gone = cart.filter((c) => byId.get(c.id)?.status !== 'live').map((c) => c.id);
     if (gone.length) return json(req, { error: 'Some cards in your cart just sold. They’ve been removed.', unavailable: gone }, 409);
 
+    // Flash sale prices (offer prices win over the sale).
+    const sale = await activeSale(0);
     const items: OrderItem[] = cart.map((c) => {
       const l = byId.get(c.id)!;
+      const listed = Math.round(Number(l.price) * 100);
+      const now = offerPrice.get(l.id)?.pay ?? salePrice(sale, l.id, listed);
       return {
         listing_id: l.id,
         title: l.variant ? `${l.title} (${l.variant})` : l.title,
         set: l.set_name,
         number: l.card_number,
         category: l.category,
-        price_cents: offerPrice.get(l.id)?.pay ?? Math.round(Number(l.price) * 100),
+        price_cents: now,
+        ...(!offerPrice.has(l.id) && now < listed ? { list_cents: listed, sale: sale!.name } : {}),
         qty: c.qty,
         photo: (l.photos as string[])[0] ?? null,
         owner_id: l.owner_id ?? null,

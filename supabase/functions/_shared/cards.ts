@@ -51,6 +51,8 @@ export type OrderItem = {
   qty: number;
   photo: string | null; // private entry-photos name, for the ledger entry
   owner_id?: string | null; // whose item (null = shared 50/50)
+  list_cents?: number; // listed price when a flash sale lowered it
+  sale?: string;
 };
 
 export type ShipTo = {

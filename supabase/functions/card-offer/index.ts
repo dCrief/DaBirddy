@@ -12,6 +12,7 @@
 import { corsHeaders, json } from '../_shared/shop.ts';
 import { db, loadSettings } from '../_shared/cards.ts';
 import { money, notifyLedger } from '../_shared/push.ts';
+import { activeSale, salePrice } from '../_shared/sale.ts';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -65,9 +66,10 @@ Deno.serve(async (req) => {
   const { data: show } = await db.from('shows').select('id').is('ended_at', null).limit(1);
   if (show?.length) return json(req, { error: 'We’re at a card show right now. Try again after the show.' }, 409);
 
-  const { data: l } = await db.from('shop_listings').select('id, title, price, status, quantity').eq('id', b.listing_id).maybeSingle();
+  const { data: l } = await db.from('shop_listings').select('id, title, variant, price, status, quantity').eq('id', b.listing_id).maybeSingle();
   if (!l || l.status !== 'live' || l.quantity < 1) return json(req, { error: 'This card just sold.' }, 409);
-  const price = Math.round(Number(l.price) * 100);
+  // During a flash sale, offers are measured against the sale price.
+  const price = salePrice(await activeSale(0), l.id, Math.round(Number(l.price) * 100));
   if (amount >= price) return json(req, { error: 'That’s the full price, so just add it to your cart.' }, 400);
   // Cards under $20 need offers of at least 80%; pricier cards use the ledger setting.
   const min = Math.ceil((price * (price < 2000 ? Math.max(80, s.offer_min_percent) : s.offer_min_percent)) / 100);
@@ -82,8 +84,9 @@ Deno.serve(async (req) => {
     .insert({ listing_id: l.id, amount_cents: amount, buyer_name: name, buyer_email: email, buyer_phone: phone, note })
     .select('token').single();
   if (error) return json(req, { error: 'Couldn’t send your offer. Please try again.' }, 500);
+  const cardName = l.variant ? `${l.title} (${l.variant})` : l.title;
   await notifyLedger('offers', {
-    title: `Offer: ${money(amount)} for ${l.title}`,
+    title: `Offer: ${money(amount)} for ${cardName}`,
     body: `${name} offered ${money(amount)} (listed ${money(price)}, ${Math.round((amount / price) * 100)}%).${note ? ` “${note.slice(0, 80)}”` : ''}`,
     tag: `offer-${row.token.slice(0, 12)}`,
   });

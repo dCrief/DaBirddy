@@ -13,6 +13,7 @@
 
 import { corsHeaders, json, loadCatalog, type ShopProduct } from '../_shared/shop.ts';
 import { db, loadSettings } from '../_shared/cards.ts';
+import { activeSale, onSale, salePrice } from '../_shared/sale.ts';
 
 const MERCH_CACHE_MS = 5 * 60 * 1000;
 const CARDS_CACHE_MS = 10 * 1000;
@@ -24,7 +25,8 @@ type ShopCard = {
   number: string | null;
   variant: string | null;  // Reverse Holo, 1st Edition, ...
   category: string;
-  price: number;        // cents
+  price: number;        // cents (the sale price during a flash sale)
+  listPrice?: number;   // cents, only while the card is on sale
   quantity: number;
   description: string | null;
   photos: { grid: string; full: string }[];
@@ -33,14 +35,16 @@ type ShopCard = {
 
 let merch: { at: number; products: ShopProduct[] } | null = null;
 type Shipping = { envelope: number; package: number; envelopeUnder: number; offers: boolean; offerMinPercent: number; maxCards: number };
-let cards: { at: number; cards: ShopCard[]; paused: boolean; shipping: Shipping | null } | null = null;
+type SaleInfo = { name: string; percent: number; all: boolean; endsAt: string } | null;
+let cards: { at: number; cards: ShopCard[]; paused: boolean; shipping: Shipping | null; sale: SaleInfo } | null = null;
 
-async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shipping: Shipping | null }> {
+async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shipping: Shipping | null; sale: SaleInfo }> {
   const s = await loadSettings().catch(() => null);
   const shipping = s ? { envelope: s.envelope_cents, package: s.package_cents, envelopeUnder: s.envelope_under_cents, offers: s.offers_enabled, offerMinPercent: s.offer_min_percent, maxCards: s.envelope_max_cards } : null;
   const { data: running, error: se } = await db.from('shows').select('id').is('ended_at', null).limit(1);
   if (se) throw se;
-  if (running?.length) return { cards: [], paused: true, shipping };
+  if (running?.length) return { cards: [], paused: true, shipping, sale: null };
+  const sale = await activeSale();
 
   const { data, error } = await db
     .from('shop_listings')
@@ -68,6 +72,7 @@ async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shippi
   return {
     paused: false,
     shipping,
+    sale: sale ? { name: sale.name, percent: sale.percent, all: sale.all, endsAt: sale.ends_at } : null,
     cards: (data ?? []).filter((l) => l.quantity - (held.get(l.id) ?? 0) > 0).map((l) => ({
       id: l.id,
       title: l.title,
@@ -75,7 +80,8 @@ async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shippi
       number: l.card_number,
       variant: l.variant,
       category: l.category,
-      price: Math.round(Number(l.price) * 100),
+      price: salePrice(sale, l.id, Math.round(Number(l.price) * 100)),
+      ...(onSale(sale, l.id) ? { listPrice: Math.round(Number(l.price) * 100) } : {}),
       quantity: l.quantity - (held.get(l.id) ?? 0),
       description: l.description,
       photos: (l.photos as string[]).map((p) => ({ grid: url(p.replace(/\.jpg$/, '_m.jpg')), full: url(p) })),
@@ -110,6 +116,7 @@ Deno.serve(async (req) => {
       cards: c.status === 'fulfilled' ? c.value.cards : cards?.cards ?? [],
       cardsPaused: c.status === 'fulfilled' ? c.value.paused : cards?.paused ?? false,
       shipping: c.status === 'fulfilled' ? c.value.shipping : cards?.shipping ?? null,
+      sale: c.status === 'fulfilled' ? c.value.sale : cards?.sale ?? null,
       merchError: m.status === 'rejected',
       cardsError: c.status === 'rejected',
     },
