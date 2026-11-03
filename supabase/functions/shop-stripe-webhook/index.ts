@@ -15,6 +15,7 @@ import Stripe from 'npm:stripe@17';
 import { printful } from '../_shared/shop.ts';
 import { db, logSale, makeLabel, syncSaleFee } from '../_shared/cards.ts';
 import { money, notifyLedger } from '../_shared/push.ts';
+import { sendThanks } from '../_shared/email.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   httpClient: Stripe.createFetchHttpClient(),
@@ -147,11 +148,33 @@ async function cardsPaid(session: Stripe.Checkout.Session): Promise<Response> {
     await logSale(orderId);
     await syncSaleFee(orderId); // a Stripe retry may bring the fee the first run didn't have
     await makeLabel(orderId);
-    if (firstTime) await notifyOrder(orderId);
+    if (firstTime) {
+      await notifyOrder(orderId);
+      // The buyer's confirmation: our thank-you email (with tracking when the label's ready), and a Stripe receipt.
+      await sendThanks(orderId);
+      await stripeReceipt(session);
+    }
     return new Response('OK', { status: 200 });
   } catch (err) {
     console.error('cards order', orderId, err);
     return new Response('Card order failed', { status: 500 });
+  }
+}
+
+/**
+ * Make sure Stripe emails the buyer a receipt. Setting receipt_email on a live payment sends one;
+ * skipped when Stripe already has an address on the charge (so the account setting doesn't double it).
+ */
+async function stripeReceipt(session: Stripe.Checkout.Session) {
+  const email = session.customer_details?.email;
+  if (!email || !session.payment_intent) return;
+  try {
+    const pi = await stripe.paymentIntents.retrieve(String(session.payment_intent), { expand: ['latest_charge'] });
+    const charge = pi.latest_charge as Stripe.Charge | null;
+    if (pi.receipt_email || charge?.receipt_email) return;
+    await stripe.paymentIntents.update(pi.id, { receipt_email: email });
+  } catch (err) {
+    console.error('stripe receipt', session.id, err);
   }
 }
 
