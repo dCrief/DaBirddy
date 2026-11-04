@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Customer Reviews &mdash; DaBirddy Cards</title>
+  <meta name="description" content="Reviews of DaBirddy from verified buyers. Only customers with a shipped order can leave one.">
+  <meta name="theme-color" content="#0d0d0f">
+  <link rel="icon" type="image/jpeg" href="../logo.jpg">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    :root { --bg: #0d0d0f; --surface: #17171c; --line: rgba(255,255,255,0.07); --line2: rgba(255,255,255,0.14); --accent: #ff4d6d; --accent2: #ffd166; --accent3: #4ade80; --text: #f0ede8; --muted: #8d8b93; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', system-ui, sans-serif; min-height: 100vh; }
+    a { color: var(--accent2); }
+    button, input, textarea { font: inherit; color: inherit; }
+    .top { max-width: 820px; margin: 0 auto; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .top a { color: var(--muted); text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+    .top a:hover { color: var(--text); }
+    .top .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-family: 'Bebas Neue', sans-serif; font-size: 1.45rem; letter-spacing: 2px; font-weight: 400; }
+    .top .brand img { width: 30px; height: 30px; border-radius: 8px; }
+    main { max-width: 820px; margin: 0 auto; padding: 10px 16px 0; }
+    h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(2.3rem, 7vw, 3.2rem); letter-spacing: 2px; line-height: 1; font-weight: 400; }
+    .summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; color: var(--muted); }
+    .summary .big { font-size: 1.6rem; font-weight: 700; color: var(--text); }
+    .stars { color: var(--accent2); letter-spacing: 2px; }
+    .box { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 20px; margin-top: 16px; }
+    .review .head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+    .review .who { font-weight: 700; }
+    .verified { display: inline-flex; align-items: center; gap: 4px; color: var(--accent3); font-size: 0.75rem; font-weight: 700; margin-left: 8px; }
+    .review .when { color: var(--muted); font-size: 0.8rem; }
+    .review p { color: #cfccd4; line-height: 1.6; margin-top: 8px; white-space: pre-line; overflow-wrap: anywhere; }
+    .review .bought { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+    .muted { color: var(--muted); line-height: 1.6; }
+    h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; letter-spacing: 1.5px; font-weight: 400; }
+    form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+    label { display: flex; flex-direction: column; gap: 6px; font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    input, textarea { font-size: 16px; text-transform: none; letter-spacing: 0; background: var(--bg); border: 1px solid var(--line2); border-radius: 10px; padding: 11px 12px; width: 100%; color: var(--text); font-weight: 400; }
+    textarea { min-height: 120px; resize: vertical; }
+    .pick { display: flex; gap: 4px; }
+    .pick button { background: none; border: 0; font-size: 2rem; line-height: 1; color: #4a4950; cursor: pointer; padding: 2px; }
+    .pick button.on { color: var(--accent2); }
+    .pick button:focus-visible { outline: 2px solid var(--accent2); border-radius: 6px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 20px; border-radius: 12px; font-weight: 700; border: 0; cursor: pointer; background: linear-gradient(135deg, var(--accent), #e0284b); color: #fff; text-decoration: none; }
+    .btn:disabled { opacity: 0.6; cursor: default; }
+    .err { color: #ff8fa3; font-size: 0.88rem; }
+    .err:empty { display: none; }
+    .ok { color: var(--accent3); font-weight: 600; }
+    .count { color: var(--muted); font-size: 0.8rem; text-align: right; text-transform: none; letter-spacing: 0; font-weight: 400; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <a href="./">&#8249; All cards</a>
+    <a class="brand" href="./"><img src="../logo.jpg" alt="">DaBirddy</a>
+    <a href="policies.html">Policies</a>
+  </div>
+  <main>
+    <div id="write"></div>
+    <h1>Customer reviews</h1>
+    <div class="summary" id="summary"><span class="muted">Loading reviews…</span></div>
+    <div id="list"></div>
+    <p class="muted" style="margin-top:18px;font-size:.85rem">Only customers with a shipped order can leave a review, using the link in the email we send after delivery. One review per order. We also have 3,800+ sales on <a href="https://www.whatnot.com/user/dabirddy" target="_blank" rel="noopener">Whatnot</a>.</p>
+  </main>
+  <footer id="siteFooter"></footer>
+  <script src="site.js"></script>
+  <script>
+  (function () {
+    var API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1/shop-public';
+    function $(id) { return document.getElementById(id); }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
+    function stars(n) { var s = ''; for (var i = 1; i <= 5; i++) s += i <= Math.floor(n + 0.25) ? '★' : '☆'; return s; }
+    function when(iso) { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+    window.DaBirddy && DaBirddy.track('view');
+
+    function loadList() {
+      fetch(API + '?reviews', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
+        if (!d.count) {
+          $('summary').innerHTML = '<span class="muted">No reviews yet. Bought from us? Watch for our email after your order arrives.</span>';
+          $('list').innerHTML = '';
+          return;
+        }
+        $('summary').innerHTML = '<span class="big">' + d.average.toFixed(1) + '</span><span class="stars" aria-label="' + d.average.toFixed(1) + ' out of 5">' + stars(d.average) + '</span><span>' + d.count + ' verified review' + (d.count === 1 ? '' : 's') + '</span>';
+        $('list').innerHTML = d.reviews.map(function (r) {
+          return '<article class="box review"><div class="head"><div><span class="stars" aria-label="' + r.rating + ' out of 5">' + stars(r.rating) + '</span></div><span class="when">' + when(r.at) + '</span></div>' +
+            '<div style="margin-top:6px"><span class="who">' + esc(r.name) + '</span><span class="verified">✓ Verified buyer</span></div>' +
+            (r.body ? '<p>' + esc(r.body) + '</p>' : '') +
+            (r.cards && r.cards.length ? '<div class="bought">Bought: ' + r.cards.map(esc).join(', ') + '</div>' : '') + '</article>';
+        }).join('');
+      }).catch(function () { $('summary').innerHTML = '<span class="muted">Couldn’t load reviews right now.</span>'; });
+    }
+
+    // A review link from our email: /cards/reviews.html?o=<order id>&t=<token>
+    var q = new URLSearchParams(location.search), o = q.get('o'), t = q.get('t');
+    if (o && t) {
+      $('write').innerHTML = '<div class="box"><span class="muted">Checking your review link…</span></div>';
+      fetch(API + '?review=' + encodeURIComponent(o) + '&t=' + encodeURIComponent(t), { cache: 'no-store' })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (x) {
+          if (!x.ok) { $('write').innerHTML = '<div class="box"><p class="err">' + esc(x.d.error || 'This review link isn’t valid.') + '</p></div>'; return; }
+          form(x.d);
+        })
+        .catch(function () { $('write').innerHTML = '<div class="box"><p class="err">Couldn’t check your link. Please try again.</p></div>'; });
+    }
+
+    function form(d) {
+      var rating = d.review ? d.review.rating : 0;
+      $('write').innerHTML = '<section class="box" style="margin-bottom:22px"><h2>' + (d.review ? 'Update your review' : 'Review your order') + '</h2>' +
+        '<p class="muted">Order ' + esc(d.order) + ': ' + d.cards.map(esc).join(', ') + '</p>' +
+        '<form id="rForm" novalidate>' +
+          '<div><div class="pick" id="pick" role="radiogroup" aria-label="Rating">' + [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" role="radio" data-n="' + n + '" aria-label="' + n + ' star' + (n === 1 ? '' : 's') + '">★</button>'; }).join('') + '</div></div>' +
+          '<label>Your review (optional)<textarea id="rBody" maxlength="1500" placeholder="How were the cards, the packaging and the shipping?">' + esc(d.review ? d.review.body : '') + '</textarea><span class="count" id="rCount"></span></label>' +
+          '<label>Name to show<input id="rName" maxlength="40" autocomplete="nickname" value="' + esc(d.review ? d.review.name : d.name) + '"></label>' +
+          '<p class="err" id="rErr"></p>' +
+          '<button class="btn" id="rBtn" type="submit">' + (d.review ? 'Update review' : 'Post review') + '</button>' +
+        '</form></section>';
+      function paint() { Array.prototype.forEach.call($('pick').children, function (b) { var n = Number(b.getAttribute('data-n')); b.classList.toggle('on', n <= rating); b.setAttribute('aria-checked', n === rating); }); }
+      function count() { $('rCount').textContent = $('rBody').value.length + ' / 1500'; }
+      paint(); count();
+      $('pick').addEventListener('click', function (e) { var b = e.target.closest('[data-n]'); if (b) { rating = Number(b.getAttribute('data-n')); paint(); } });
+      $('rBody').addEventListener('input', count);
+      $('rForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var name = $('rName').value.trim();
+        if (!rating) { $('rErr').textContent = 'Tap a star rating.'; return; }
+        if (!name) { $('rErr').textContent = 'Add the name to show with your review.'; return; }
+        $('rErr').textContent = ''; $('rBtn').disabled = true; $('rBtn').textContent = 'Posting…';
+        fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'review', o: o, t: t, rating: rating, body: $('rBody').value, name: name }) })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (x) {
+            if (!x.ok) { $('rBtn').disabled = false; $('rBtn').textContent = 'Post review'; $('rErr').textContent = x.d.error || 'Couldn’t post your review. Please try again.'; return; }
+            $('write').innerHTML = '<div class="box" style="margin-bottom:22px"><p class="ok">Thanks for your review! It’s posted below.</p><p class="muted" style="margin-top:6px">You can come back to this link to change it any time.</p></div>';
+            loadList();
+          })
+          .catch(function () { $('rBtn').disabled = false; $('rBtn').textContent = 'Post review'; $('rErr').textContent = 'Couldn’t post your review. Check your connection and try again.'; });
+      });
+    }
+
+    loadList();
+  })();
+  </script>
+</body>
+</html>

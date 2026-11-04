@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Unsubscribe &mdash; DaBirddy Cards</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0d0d0f">
+  <link rel="icon" type="image/jpeg" href="../logo.jpg">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    body { background: #0d0d0f; color: #f0ede8; font-family: 'DM Sans', system-ui, sans-serif; min-height: 100vh; padding: 40px 16px; }
+    .card { max-width: 480px; margin: 0 auto; background: #17171c; border: 1px solid rgba(255,255,255,0.07); border-radius: 22px; padding: 30px 24px; }
+    h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.4rem; letter-spacing: 2px; line-height: 1; font-weight: 400; }
+    p { color: #cfccd4; margin-top: 12px; line-height: 1.6; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 18px; border-radius: 12px; font-weight: 700; text-decoration: none; color: #fff; background: linear-gradient(135deg, #ff4d6d, #e0284b); margin-top: 20px; border: 0; font: inherit; cursor: pointer; }
+    .btn:disabled { opacity: 0.6; }
+    a { color: #ffd166; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1 id="title">Unsubscribe</h1>
+    <p id="msg">Stop getting these emails from DaBirddy?</p>
+    <button class="btn" id="go">Unsubscribe</button>
+    <p style="font-size:.85rem;color:#8d8b93">Order emails (receipts and shipping updates) still come for anything you buy.</p>
+    <a class="btn" href="./" style="background:#202027;border:1px solid rgba(255,255,255,0.14)">Back to the cards</a>
+  </main>
+  <script>
+  (function () {
+    var API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1/shop-public';
+    var u = new URLSearchParams(location.search).get('u') || '';
+    var $ = function (id) { return document.getElementById(id); };
+    if (!/^[0-9a-f]{16,64}$/i.test(u)) { $('msg').textContent = 'This unsubscribe link isn’t complete. Use the link from the bottom of our email, or email dabirddy@gmail.com and we’ll take you off.'; $('go').hidden = true; return; }
+    // A click (not just opening the page) unsubscribes, so link scanners in mail apps can't do it by accident.
+    $('go').addEventListener('click', function () {
+      var b = this; b.disabled = true; b.textContent = 'Unsubscribing…';
+      fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'unsubscribe', u: u }) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (x) {
+          b.hidden = true;
+          if (!x.ok) { $('msg').textContent = x.d.error || 'That link didn’t work. Email dabirddy@gmail.com and we’ll take you off.'; return; }
+          $('title').textContent = 'Done';
+          $('msg').textContent = x.d.kind === 'alert'
+            ? 'You won’t get any more “' + x.d.term + '” alerts.'
+            : 'You’re off the DaBirddy email list, and any card alerts on this email are stopped. Sorry to see you go!';
+        })
+        .catch(function () { b.disabled = false; b.textContent = 'Unsubscribe'; $('msg').textContent = 'Couldn’t reach us. Check your connection and try again.'; });
+    });
+  })();
+  </script>
+</body>
+</html>

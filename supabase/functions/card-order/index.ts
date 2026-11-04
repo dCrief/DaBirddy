@@ -1,7 +1,10 @@
 /**
  * GET /card-order?session_id=cs_... — what the buyer sees on the order
- * confirmation page: items, totals, shipping method and tracking.
+ * confirmation and tracking pages: items, totals, shipping method and tracking.
  * The Stripe session id is unguessable, so it works as the buyer's key.
+ * GET /card-order?order=DB…&email=… — the same, for the "Track your order" form
+ * (order number and the email it was bought with, both required).
+ * Shipped orders also get their review link.
  * Never returns the address or anything about other orders.
  * Deploy with --no-verify-jwt.
  */
@@ -12,14 +15,18 @@ import { db } from '../_shared/cards.ts';
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(req) });
   if (req.method !== 'GET') return json(req, { error: 'Method not allowed' }, 405);
-  const id = new URL(req.url).searchParams.get('session_id') ?? '';
-  if (!/^cs_[A-Za-z0-9_]{10,}$/.test(id)) return json(req, { error: 'Not found' }, 404);
-
-  const { data: o } = await db
-    .from('shop_orders')
-    .select('order_number, status, method, items, subtotal_cents, shipping_cents, total_cents, tracking_number, label_url, shipped_at')
-    .eq('stripe_session_id', id)
-    .maybeSingle();
+  const q = new URL(req.url).searchParams;
+  const id = q.get('session_id') ?? '';
+  const num = (q.get('order') ?? '').trim().toUpperCase().replace(/^#/, '');
+  const email = (q.get('email') ?? '').trim().toLowerCase();
+  const cols = 'id, order_number, status, method, items, subtotal_cents, shipping_cents, total_cents, tracking_number, label_url, shipped_at, paid_at, buyer_email, review_token';
+  let o: any = null;
+  if (/^cs_[A-Za-z0-9_]{10,}$/.test(id)) {
+    ({ data: o } = await db.from('shop_orders').select(cols).eq('stripe_session_id', id).maybeSingle());
+  } else if (/^DB[0-9A-F]{6,12}$/.test(num) && /^\S+@\S+\.\S+$/.test(email)) {
+    ({ data: o } = await db.from('shop_orders').select(cols).eq('order_number', num).not('paid_at', 'is', null).maybeSingle());
+    if (o && (o.buyer_email ?? '').trim().toLowerCase() !== email) o = null;
+  }
   if (!o) return json(req, { error: 'Not found' }, 404);
 
   // Envelope tracking lives with TCG Tracking; ask it for the latest scan.
@@ -58,6 +65,10 @@ Deno.serve(async (req) => {
       ? `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(o.tracking_number)}`
       : null,
     shipped: !!o.shipped_at,
+    shippedAt: o.shipped_at,
+    reviewUrl: o.status === 'shipped' && o.paid_at && o.review_token
+      ? `https://dabirddy.com/cards/reviews.html?o=${o.id}&t=${o.review_token}`
+      : null,
     progress,
   }, 200, { 'Cache-Control': 'no-store' });
 });
