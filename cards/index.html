@@ -366,7 +366,7 @@
     <ul class="facts">
       <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="4"/></svg><span>These photos are of this exact card. Judge the condition from them, and tap a photo to zoom in.</span></li>
       <li><svg class="i" viewBox="0 0 24 24"><path d="M3 7l9 6 9-6M3 7v10h18V7z"/></svg><span id="shipFact">Ships with tracking: a protected envelope ($1.50) for up to 5 cards under $20, a tracked package ($8) for $20 and up, more than 5 cards, or anything sealed.</span></li>
-      <li><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg><span>Not what you expected? Return it within 14 days of delivery for a refund. <a href="policies.html#returns">How returns work</a></span></li>
+      <li><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg><span id="returnFact">Not what you expected? Return it within 14 days of delivery for a refund. <a href="policies.html#returns">How returns work</a></span></li>
     </ul>
     <form class="notify" id="notifyForm" novalidate>
       <span id="notifyText"></span>
@@ -645,6 +645,9 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     $('cSub').textContent = sub(c);
     $('cPrice').innerHTML = money(c.price) + (c.listPrice ? '<s>' + money(c.listPrice) + '</s>' : '') + (c.quantity > 1 ? '<span class="qty-left">' + c.quantity + ' available</span>' : '');
     $('cDesc').textContent = c.description || '';
+    $('returnFact').innerHTML = c.category === 'sealed'
+      ? 'Sealed product is final sale and can’t be returned. If it arrives damaged, we’ll make it right. <a href="policies.html#returns">Our policy</a>'
+      : 'Not what you expected? Return it within 14 days of delivery for a refund. <a href="policies.html#returns">How returns work</a>';
     $('cDesc').hidden = !c.description;
     $('askBtn').href = 'https://ig.me/m/dabirddygaming';
     updateBuyBtn();

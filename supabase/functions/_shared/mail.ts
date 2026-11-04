@@ -91,8 +91,8 @@ export async function shipped(o: OrderForMail) {
     para(o.method === 'envelope' ? 'It’s coming in a protected, tracked envelope. Most arrive in 3–7 business days.' : 'It’s coming by USPS Ground Advantage. Most arrive in 2–6 business days.') +
     (o.tracking_number ? para(`Tracking: ${usps ? `<a href="${usps}" style="color:#e11d48">${esc(o.tracking_number)}</a>` : esc(o.tracking_number)}`) : '') +
     button(orderLink(o), 'Track your order') +
-    `<p style="margin:22px 0 0;color:#666;font-size:13px;line-height:1.5">Something not right? Reply to this email. Returns are accepted within 14 days of delivery.</p>`);
-  const text = `We just shipped order ${o.order_number}: ${itemsText(o)}.\n${o.tracking_number ? `Tracking: ${o.tracking_number}\n` : ''}Track your order: ${orderLink(o)}\n\nSomething not right? Reply to this email. Returns are accepted within 14 days of delivery.`;
+    `<p style="margin:22px 0 0;color:#666;font-size:13px;line-height:1.5">Something not right? Reply to this email. Cards can be returned within 14 days of delivery (sealed product is final sale).</p>`);
+  const text = `We just shipped order ${o.order_number}: ${itemsText(o)}.\n${o.tracking_number ? `Tracking: ${o.tracking_number}\n` : ''}Track your order: ${orderLink(o)}\n\nSomething not right? Reply to this email. Cards can be returned within 14 days of delivery (sealed product is final sale).`;
   return send(o.buyer_email, `Your DaBirddy order ${o.order_number} has shipped`, html, text);
 }
 
