@@ -193,7 +193,8 @@ Deno.serve(async (req) => {
           const { count } = await db.from('shop_alerts').select('id', { count: 'exact', head: true }).eq('email', email).eq('active', true);
           if ((count ?? 0) >= 25) return json(req, { error: 'That email already has 25 alerts. Stop one first from the “Manage alerts” link in any alert email.' }, 400);
         }
-        const row = { email, term, active: true, updated_at: new Date().toISOString(), category: filters.category ?? null, max_price: filters.max_price ?? null };
+        // A plain "notify me" (no filter fields sent) keeps any filters the alert already has.
+        const row = { email, term, active: true, updated_at: new Date().toISOString(), ...filters };
         const { data: a, error } = same
           ? await db.from('shop_alerts').update(row).eq('id', same.id).select('token, ' + ALERT_COLS).single()
           : await db.from('shop_alerts').insert(row).select('token, ' + ALERT_COLS).single();
