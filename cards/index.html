@@ -111,6 +111,12 @@
     .sheet.show { display: grid; grid-template-columns: 1.1fr 1fr; animation: pop 0.22s ease; }
     @keyframes pop { from { opacity: 0; transform: translate(-50%, -48%) scale(0.98); } to { opacity: 1; transform: translate(-50%, -50%); } }
     .close { position: absolute; top: 12px; right: 12px; z-index: 3; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: rgba(13,13,15,0.75); border: 1px solid var(--line2); cursor: pointer; }
+    /* Back / close bar: floats over the top of the sheet on desktop, sticks to the top while scrolling on mobile */
+    .sheet-bar { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 4; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+    .sheet-bar > * { pointer-events: auto; }
+    .sheet-bar .close { position: static; background: rgba(13,13,15,0.88); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+    .back-btn { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px 0 10px; border-radius: 999px; background: rgba(13,13,15,0.88); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border: 1px solid var(--line2); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+    .back-btn:hover, .sheet-bar .close:hover { border-color: rgba(255,255,255,0.3); }
     .gallery { position: relative; background: radial-gradient(120% 90% at 50% 20%, #26262e 0%, #111114 75%); display: flex; flex-direction: column; min-height: 0; }
     .slides { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; flex: 1; min-height: 0; }
     .slides::-webkit-scrollbar { display: none; }
@@ -255,7 +261,8 @@
     .rcard .rprice { color: var(--accent2); font-weight: 700; margin-top: 2px; }
 
     @media (max-width: 760px) {
-      .sheet { top: auto; bottom: 0; left: 0; transform: none; width: 100%; max-height: 94vh; border-radius: 22px 22px 0 0; overflow-y: auto; }
+      .sheet { top: auto; bottom: 0; left: 0; transform: none; width: 100%; max-height: 94vh; max-height: calc(100dvh - 12px); border-radius: 22px 22px 0 0; overflow-y: auto; overscroll-behavior: contain; }
+      .sheet-bar { position: sticky; top: 0; left: auto; right: auto; margin-bottom: -62px; padding: 12px; }
       .sheet.show { display: block; animation: slide 0.25s ease; }
       @keyframes slide { from { transform: translateY(100%); } to { transform: none; } }
       .slide img { max-height: 52vh; }
@@ -322,7 +329,10 @@
 
 <div class="overlay" id="overlay"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="cName">
-  <button class="close" id="closeSheet" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div class="sheet-bar">
+    <button class="back-btn" id="backSheet" type="button" aria-label="Back to all cards"><svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>All cards</button>
+    <button class="close" id="closeSheet" type="button" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
   <div class="gallery">
     <div class="slides" id="slides"></div>
     <button class="nav-btn prev" id="prev" aria-label="Previous photo"><svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
@@ -710,6 +720,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   $('next').addEventListener('click', function () { goTo(photo + 1); });
   $('thumbs').addEventListener('click', function (e) { var b = e.target.closest('[data-i]'); if (b) goTo(Number(b.getAttribute('data-i'))); });
   $('closeSheet').addEventListener('click', function () { closeCard(false); });
+  $('backSheet').addEventListener('click', function () { closeCard(false); });
   $('overlay').addEventListener('click', function () { if ($('drawer').classList.contains('show')) closeCart(); else closeCard(false); });
 
   $('shareBtn').addEventListener('click', function () {
