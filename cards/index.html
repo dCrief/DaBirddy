@@ -204,8 +204,10 @@
     .coupon input { flex: 1; min-width: 0; font: inherit; font-size: 16px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); background: var(--bg); border: 1px solid var(--line2); border-radius: 10px; padding: 0 12px; min-height: 42px; }
     .coupon input::placeholder { text-transform: none; letter-spacing: 0; color: var(--muted); }
     .drawer-foot .coupon .btn { margin-top: 0; width: auto; min-height: 42px; padding: 0 16px; }
-    .coupon-on { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.85rem; padding: 9px 12px; border-radius: 10px; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); color: var(--accent3); font-weight: 600; }
-    .coupon-on .link { background: none; border: 0; color: var(--muted); font: inherit; font-size: 0.8rem; text-decoration: underline; cursor: pointer; }
+    .coupon-on { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.85rem; padding: 4px 4px 4px 12px; border-radius: 10px; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); color: var(--accent3); font-weight: 600; }
+    /* A real tap target: the old underlined text link was 15px tall and easy to miss on a phone. */
+    .coupon-on .link { flex: none; min-height: 36px; min-width: 44px; padding: 0 12px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid var(--line2); color: var(--text); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .coupon-on .link:active { background: rgba(255,255,255,0.12); }
     .coupon-msg { font-size: 0.8rem; color: #ff8fa3; }
     .coupon-msg:empty { display: none; }
     .coupon-msg.note { color: var(--muted); }
