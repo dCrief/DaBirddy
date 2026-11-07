@@ -76,7 +76,12 @@
     '.site-foot .trust{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.07);font-size:.8rem}' +
     '.site-foot .trust span{display:inline-flex;align-items:center;gap:6px}' +
     '.site-foot .trust a{color:#ffd166;text-decoration:none}' +
-    '.site-foot .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}';
+    '.site-foot .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}' +
+    '.site-foot .nudge{margin-top:12px;padding:14px 16px;background:#17171c;border:1px solid rgba(255,209,102,0.4);border-radius:14px;color:#cfccd4}' +
+    '.site-foot .nudge b{color:#f0ede8}' +
+    '.site-foot .nudge .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}' +
+    '.site-foot .nudge a{display:inline-flex;align-items:center;min-height:42px;padding:0 16px;border-radius:12px;font-weight:700;text-decoration:none;color:#fff;background:linear-gradient(135deg,#ff4d6d,#e0284b)}' +
+    '.site-foot .nudge button{background:#202027;border:1px solid rgba(255,255,255,0.14);min-height:42px;font-weight:600;color:#cfccd4}';
 
   function footer() {
     var el = document.getElementById('siteFooter');
@@ -90,7 +95,9 @@
           '<form id="footSignup" novalidate><input type="email" id="footEmail" placeholder="you@email.com" autocomplete="email" aria-label="Email address" required>' +
           '<input class="hp" name="website" id="footHp" tabindex="-1" autocomplete="off" aria-hidden="true">' +
           '<button type="submit" id="footBtn">Sign up</button></form>' +
-          '<div class="msg" id="footMsg" role="status"></div></div>' +
+          '<div class="msg" id="footMsg" role="status"></div>' +
+          '<div class="nudge" id="footNudge" hidden><b>Collect certain Pokémon?</b> Set up alerts and we’ll email you the moment one is listed, before it sells.' +
+            '<div class="row"><a href="alerts.html" id="footNudgeGo">🔔 Set up alerts</a><button type="button" id="footNudgeNo">No thanks</button></div></div></div>' +
         '<nav aria-label="Shop info">' +
           '<a href="./">Shop all cards</a><a href="reviews.html">Customer reviews</a>' +
           '<a href="alerts.html">Card alerts</a><a href="order.html">Track your order</a><a href="policies.html#shipping">Shipping</a>' +
@@ -124,8 +131,15 @@
         document.getElementById('footEmail').value = '';
         msg.className = 'msg ok';
         msg.textContent = x.d.already ? 'You’re already on the list. Thanks!' : 'You’re in! Check your inbox for a welcome email.';
+        // Then offer Pokémon alerts (the alerts page fills in this email).
+        try { localStorage.setItem('dabirddy_email', email); } catch (err) {}
+        if (!/alerts\.html$/.test(location.pathname)) {
+          var nudge = document.getElementById('footNudge');
+          nudge.hidden = false;
+        }
       }, function () { btn.disabled = false; msg.className = 'msg bad'; msg.textContent = 'Couldn’t sign you up. Check your connection and try again.'; });
     });
+    document.getElementById('footNudgeNo').addEventListener('click', function () { document.getElementById('footNudge').hidden = true; });
   }
 
   window.DaBirddy = { api: API, vid: vid, track: track, post: post, subscribe: subscribe, reviews: reviews, stars: stars };

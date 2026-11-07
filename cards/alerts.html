@@ -44,6 +44,23 @@
     .quick { display: flex; flex-wrap: wrap; gap: 8px; }
     .quick button { background: var(--surface2); border: 1px solid var(--line2); border-radius: 999px; padding: 6px 12px; font-size: 0.85rem; cursor: pointer; color: #cfccd4; }
     .quick button:hover { color: var(--text); border-color: var(--accent2); }
+    .field { display: flex; flex-direction: column; gap: 6px; position: relative; }
+    .field > .lab { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .field small { color: var(--muted); font-size: 0.8rem; }
+    .picker { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--bg); border: 1px solid var(--line2); border-radius: 10px; padding: 6px; min-height: 46px; cursor: text; }
+    .picker:focus-within { border-color: var(--accent2); }
+    .picker input { flex: 1; min-width: 140px; border: 0; background: none; min-height: 32px; padding: 0 6px; outline: none; }
+    .pick { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,209,102,0.12); border: 1px solid rgba(255,209,102,0.45); color: var(--text); border-radius: 8px; padding: 4px 4px 4px 10px; font-size: 0.9rem; font-weight: 600; }
+    .pick button { background: none; border: 0; color: var(--muted); cursor: pointer; width: 26px; height: 26px; border-radius: 6px; font-size: 1.1rem; line-height: 1; display: grid; place-items: center; }
+    .pick button:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+    .sugg { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; list-style: none; background: var(--surface2); border: 1px solid var(--line2); border-radius: 12px; max-height: 280px; overflow-y: auto; padding: 4px; box-shadow: 0 12px 30px rgba(0,0,0,0.5); }
+    .sugg li { padding: 10px 12px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+    .sugg li .no { color: var(--muted); font-size: 0.8rem; }
+    .sugg li b { color: var(--accent2); font-weight: 700; }
+    .sugg li.on, .sugg li:hover { background: rgba(255,255,255,0.08); }
+    .sugg li.custom { color: var(--accent2); }
+    .sugg .head { padding: 6px 12px 4px; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; cursor: default; }
+    .sugg .head:hover { background: none; }
     .msg { font-size: 0.9rem; line-height: 1.5; }
     .msg:empty { display: none; }
     .msg.ok { color: var(--accent3); } .msg.bad { color: #ff8fa3; }
@@ -74,11 +91,16 @@
     <section class="box" id="addBox">
       <h2 id="addTitle">Add an alert</h2>
       <form id="addForm" novalidate>
-        <label>Pokémon or card
-          <input id="term" list="pokemon" maxlength="60" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Charizard, Umbreon, Pikachu…" required>
-          <small>Any Pokémon name, or words from a card like “Charizard ex” or “151”.</small>
-        </label>
-        <datalist id="pokemon"></datalist>
+        <div class="field">
+          <label class="lab" for="term">Pokémon to watch for</label>
+          <div style="position:relative">
+            <div class="picker" id="picker">
+              <input id="term" maxlength="60" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Search Pokémon…" role="combobox" aria-expanded="false" aria-controls="sugg" aria-autocomplete="list">
+            </div>
+            <ul class="sugg" id="sugg" role="listbox" hidden></ul>
+          </div>
+          <small>Pick as many as you like. You can also type words from a card, like “Charizard ex” or “151”, and press Enter.</small>
+        </div>
         <div class="quick" id="quick" aria-label="Popular picks"></div>
         <div class="grid2">
           <label>Kind of cards
@@ -141,16 +163,127 @@
     }
     function say(el, text, kind) { el.className = 'msg' + (kind ? ' ' + kind : ''); el.textContent = text; }
 
-    // ── Pokémon suggestions ──
-    $('pokemon').innerHTML = (window.POKEMON || []).map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
-    ['Charizard', 'Pikachu', 'Umbreon', 'Gengar', 'Mewtwo', 'Eevee', 'Rayquaza', 'Lugia'].forEach(function (n) {
+    // ── Pokémon picker: type-ahead over every name; each pick becomes a box ──
+    var NAMES = (window.POKEMON || []).map(function (n, i) { return { name: n, no: i + 1, key: fold(n) }; });
+    var POPULAR = ['Charizard', 'Pikachu', 'Umbreon', 'Gengar', 'Mewtwo', 'Eevee', 'Rayquaza', 'Lugia'];
+    var MAX_PICKS = 25;
+    var picks = [], shown = [], active = -1;
+    function fold(s) { return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+    function picked(n) { var k = fold(n); return picks.some(function (p) { return fold(p) === k; }); }
+    // Prefix matches first, then a word in the name, then anywhere, then letters in order (catches typos like "chrzrd").
+    function suggest(q) {
+      var k = fold(q), out = [];
+      if (!k) {
+        POPULAR.forEach(function (n) { var m = NAMES.filter(function (x) { return x.name === n; })[0]; if (m && !picked(n)) out.push({ m: m, pop: true }); });
+        NAMES.forEach(function (m) { if (!picked(m.name)) out.push({ m: m }); });
+        return out;
+      }
+      var tiers = [[], [], [], []];
+      var sub = new RegExp(k.replace(/ /g, '').split('').map(function (c) { return c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('.*'));
+      NAMES.forEach(function (m) {
+        if (picked(m.name)) return;
+        var i = m.key.indexOf(k);
+        if (i === 0) tiers[0].push({ m: m, at: i });
+        else if (i > 0 && m.key[i - 1] === ' ') tiers[1].push({ m: m, at: i });
+        else if (i > 0) tiers[2].push({ m: m, at: i });
+        else if (k.length >= 3 && sub.test(m.key.replace(/ /g, ''))) tiers[3].push({ m: m });
+      });
+      // Within a tier, the Pokémon collectors ask for most come first (so "char" offers Charizard first).
+      var rank = function (r) { var i = POPULAR.indexOf(r.m.name); return i < 0 ? 99 : i; };
+      tiers.forEach(function (t) { t.sort(function (x, y) { return rank(x) - rank(y) || x.m.no - y.m.no; }); });
+      out = tiers[0].concat(tiers[1], tiers[2], tiers[3].slice(0, 8));
+      return out;
+    }
+    function mark(name, q) {
+      var k = fold(q); if (!k) return esc(name);
+      var i = fold(name).indexOf(k);
+      // fold() keeps length for plain names; only highlight when it lines up.
+      if (i < 0 || fold(name).length !== name.length) return esc(name);
+      return esc(name.slice(0, i)) + '<b>' + esc(name.slice(i, i + k.length)) + '</b>' + esc(name.slice(i + k.length));
+    }
+    function openList() {
+      var q = $('term').value.trim();
+      var list = suggest(q);
+      var custom = q.length >= 2 && !picked(q) && !list.some(function (r) { return fold(r.m.name) === fold(q); });
+      shown = list.map(function (r) { return r.m.name; });
+      var html = '', popDone = false;
+      if (!q && list.length && list[0].pop) html += '<li class="head" role="presentation">Popular</li>';
+      list.forEach(function (r, i) {
+        if (!q && !r.pop && !popDone) { popDone = true; html += '<li class="head" role="presentation">All Pokémon</li>'; }
+        html += '<li role="option" id="opt' + i + '" data-i="' + i + '">' + '<span>' + mark(r.m.name, q) + '</span><span class="no">#' + r.m.no + '</span></li>';
+      });
+      if (custom) { shown.push(q); html += '<li role="option" class="custom" id="opt' + (shown.length - 1) + '" data-i="' + (shown.length - 1) + '">Watch for “' + esc(q) + '”</li>'; }
+      if (!shown.length) html = '<li class="head" role="presentation">' + (picks.length >= MAX_PICKS ? 'That’s the most for one go' : 'No Pokémon match that') + '</li>';
+      $('sugg').innerHTML = html;
+      $('sugg').hidden = false; $('term').setAttribute('aria-expanded', 'true');
+      $('sugg').scrollTop = 0;
+      setActive(q && shown.length ? 0 : -1);
+    }
+    function closeList() { $('sugg').hidden = true; $('term').setAttribute('aria-expanded', 'false'); active = -1; $('term').removeAttribute('aria-activedescendant'); }
+    function setActive(i) {
+      active = i;
+      [].forEach.call($('sugg').querySelectorAll('[data-i]'), function (li) { li.classList.toggle('on', +li.getAttribute('data-i') === i); });
+      var li = $('opt' + i);
+      if (li) { $('term').setAttribute('aria-activedescendant', 'opt' + i); li.scrollIntoView({ block: 'nearest' }); } else $('term').removeAttribute('aria-activedescendant');
+    }
+    function addPick(name) {
+      name = String(name).trim().replace(/\s+/g, ' ').slice(0, 60);
+      if (name.length < 2 || picked(name)) return;
+      if (picks.length >= MAX_PICKS) { say($('addMsg'), 'That’s ' + MAX_PICKS + ' at once. Save these first, then add more.', 'bad'); return; }
+      picks.push(name); renderPicks();
+    }
+    function removePick(i) { picks.splice(i, 1); renderPicks(); }
+    function renderPicks() {
+      [].forEach.call($('picker').querySelectorAll('.pick'), function (el) { el.remove(); });
+      picks.forEach(function (n, i) {
+        var el = document.createElement('span'); el.className = 'pick';
+        el.innerHTML = esc(n) + '<button type="button" data-rm="' + i + '" aria-label="Remove ' + esc(n) + '">×</button>';
+        $('picker').insertBefore(el, $('term'));
+      });
+      $('term').placeholder = picks.length ? 'Add another…' : 'Search Pokémon…';
+      $('addBtn').textContent = picks.length > 1 ? 'Add ' + picks.length + ' alerts' : 'Add alert';
+      [].forEach.call($('quick').children, function (b) { b.hidden = picked(b.textContent); });
+      $('quick').hidden = ![].some.call($('quick').children, function (b) { return !b.hidden; });
+    }
+    function choose(i) {
+      if (i < 0 || i >= shown.length) return;
+      addPick(shown[i]);
+      $('term').value = '';
+      openList();
+      $('term').focus();
+    }
+    $('picker').addEventListener('click', function (e) {
+      var rm = e.target.closest('[data-rm]');
+      if (rm) { removePick(+rm.getAttribute('data-rm')); $('term').focus(); return; }
+      $('term').focus();
+    });
+    $('term').addEventListener('focus', openList);
+    $('term').addEventListener('input', openList);
+    $('term').addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if ($('sugg').hidden) openList(); else setActive(Math.min(active + 1, shown.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(active - 1, 0)); }
+      else if (e.key === 'Enter') {
+        if (!$('sugg').hidden && active >= 0) { e.preventDefault(); choose(active); }
+        else if ($('term').value.trim().length >= 2) { e.preventDefault(); addPick($('term').value); $('term').value = ''; openList(); }
+      }
+      else if (e.key === 'Escape') closeList();
+      else if (e.key === 'Backspace' && !$('term').value && picks.length) removePick(picks.length - 1);
+      else if (e.key === ',' && $('term').value.trim().length >= 2) { e.preventDefault(); choose(active >= 0 ? active : shown.length - 1); }
+    });
+    // mousedown (not click) so the input doesn't lose focus and close the list first
+    $('sugg').addEventListener('mousedown', function (e) {
+      var li = e.target.closest('[data-i]'); e.preventDefault();
+      if (li) choose(+li.getAttribute('data-i'));
+    });
+    document.addEventListener('click', function (e) { if (!e.target.closest('.field')) closeList(); });
+    POPULAR.forEach(function (n) {
       var b = document.createElement('button'); b.type = 'button'; b.textContent = n;
-      b.addEventListener('click', function () { $('term').value = n; $('term').focus(); });
+      b.addEventListener('click', function () { addPick(n); });
       $('quick').appendChild(b);
     });
 
     var params = new URLSearchParams(location.search);
-    if (params.get('term')) $('term').value = params.get('term').slice(0, 60);
+    if (params.get('term')) addPick(params.get('term').slice(0, 60));
     if (params.get('cat') && KIND[params.get('cat')]) $('cat').value = params.get('cat');
     $('email').value = myEmail();
     $('linkEmail').value = myEmail();
@@ -222,26 +355,45 @@
     });
     $('forget').addEventListener('click', function () { store.set('dabirddy_alerts_u', ''); u = ''; mine = null; $('email').value = ''; showMine(); });
 
-    // ── Add an alert ──
+    // ── Add alerts: one per picked Pokémon, all with the same kind and top price ──
     $('addForm').addEventListener('submit', function (e) {
       e.preventDefault();
       if ($('hp').value) return;
-      var term = $('term').value.trim().replace(/\s+/g, ' '), email = $('email').value.trim(), max = $('max').value.trim(), msg = $('addMsg'), btn = $('addBtn');
-      if (term.length < 2) { say(msg, 'Which Pokémon should we watch for?', 'bad'); $('term').focus(); return; }
+      if ($('term').value.trim().length >= 2) { addPick($('term').value); $('term').value = ''; }
+      closeList();
+      var email = $('email').value.trim(), max = $('max').value.trim(), cat = $('cat').value, msg = $('addMsg'), btn = $('addBtn');
+      if (!picks.length) { say(msg, 'Pick at least one Pokémon to watch for.', 'bad'); $('term').focus(); return; }
       if (max && !(Number(max) >= 1)) { say(msg, 'Enter a top price of $1 or more, or leave it blank for any price.', 'bad'); $('max').focus(); return; }
       if (!mine && !EMAIL.test(email)) { say(msg, 'Enter your email address so we can tell you.', 'bad'); $('email').focus(); return; }
-      var body = { action: 'alert', term: term, category: $('cat').value || null, max_price: max ? Number(max) : null, vid: D.vid() || undefined };
-      if (mine) body.u = u; else body.email = email;
+      var todo = picks.slice(), done = [], failed = [], lastErr = '';
       btn.disabled = true; say(msg, 'Saving…');
-      D.post(body).then(function (x) {
+      (function next() {
+        if (!todo.length) return finish();
+        var term = todo.shift();
+        var body = { action: 'alert', term: term, category: cat || null, max_price: max ? Number(max) : null, vid: D.vid() || undefined };
+        if (mine) body.u = u; else body.email = email;
+        D.post(body).then(function (x) {
+          if (!x.ok) { failed.push(term); lastErr = x.d.error || ''; }
+          else {
+            done.push(term);
+            if (mine && x.d.alert) mine.alerts = [x.d.alert].concat(mine.alerts.filter(function (a) { return a.id !== x.d.alert.id; }));
+          }
+          next();
+        }, function () { failed.push(term); lastErr = 'Couldn’t reach us. Check your connection and try again.'; next(); });
+      })();
+      function finish() {
         btn.disabled = false;
-        if (!x.ok) { say(msg, x.d.error || 'Couldn’t save that. Please try again.', 'bad'); return; }
+        picks = failed.slice(); renderPicks();
+        if (mine) showMine();
+        if (!done.length) { say(msg, lastErr || 'Couldn’t save that. Please try again.', 'bad'); return; }
         store.set('dabirddy_email', mine ? mine.email : email);
-        var bits = [$('cat').value ? KIND[$('cat').value].toLowerCase() : '', max ? 'up to $' + Number(max) : ''].filter(Boolean).join(', ');
-        say(msg, (x.d.updated ? 'Updated! ' : 'Done! ') + 'We’ll email you when new ' + term + ' cards are listed' + (bits ? ' (' + bits + ')' : '') + '.' + (mine ? '' : ' Check your inbox for a link to manage all your alerts.'), 'ok');
-        $('term').value = ''; $('max').value = ''; $('cat').value = '';
-        if (mine && x.d.alert) { mine.alerts = [x.d.alert].concat(mine.alerts.filter(function (a) { return a.id !== x.d.alert.id; })); showMine(); }
-      }, function () { btn.disabled = false; say(msg, 'Couldn’t reach us. Check your connection and try again.', 'bad'); });
+        var bits = [cat ? KIND[cat].toLowerCase() : '', max ? 'up to $' + Number(max) : ''].filter(Boolean).join(', ');
+        var names = done.length === 1 ? done[0] : done.slice(0, -1).join(', ') + ' or ' + done[done.length - 1];
+        var text = 'Done! We’ll email you when new ' + names + ' cards are listed' + (bits ? ' (' + bits + ')' : '') + '.' + (mine ? '' : ' Check your inbox for a link to manage all your alerts.');
+        if (failed.length) text += ' We couldn’t save ' + failed.join(', ') + (lastErr ? ': ' + lastErr : '.');
+        say(msg, text, failed.length ? 'bad' : 'ok');
+        if (!failed.length) { $('max').value = ''; $('cat').value = ''; }
+      }
     });
 
     // ── Email me a manage link ──
@@ -258,6 +410,7 @@
       }, function () { btn.disabled = false; say(msg, 'Couldn’t reach us. Check your connection and try again.', 'bad'); });
     });
 
+    renderPicks();
     loadMine();
   })();
   </script>
