@@ -25,6 +25,7 @@ type ShopCard = {
   number: string | null;
   variant: string | null;  // Reverse Holo, 1st Edition, ...
   category: string;
+  shipping: string;     // auto | envelope | package | free (set per listing in the ledger)
   price: number;        // cents (the sale price during a flash sale)
   listPrice?: number;   // cents, only while the card is on sale
   quantity: number;
@@ -48,7 +49,7 @@ async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shippi
 
   const { data, error } = await db
     .from('shop_listings')
-    .select('id, title, set_name, card_number, variant, category, price, quantity, description, photos, published_at')
+    .select('id, title, set_name, card_number, variant, category, shipping, price, quantity, description, photos, published_at')
     .eq('status', 'live')
     .gt('quantity', 0)
     .order('published_at', { ascending: false })
@@ -80,6 +81,7 @@ async function loadCards(): Promise<{ cards: ShopCard[]; paused: boolean; shippi
       number: l.card_number,
       variant: l.variant,
       category: l.category,
+      shipping: l.shipping ?? 'auto',
       price: salePrice(sale, l.id, Math.round(Number(l.price) * 100)),
       ...(onSale(sale, l.id) ? { listPrice: Math.round(Number(l.price) * 100) } : {}),
       quantity: l.quantity - (held.get(l.id) ?? 0),
