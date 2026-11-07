@@ -1,3 +1,4 @@
+-- Applied to the live project on 2026-11-07.
 -- Customer card alerts: let a shopper narrow an alert to a kind of listing and a top price,
 -- and manage all of their alerts from one page (cards/alerts.html). Additive only.
 alter table public.shop_alerts
