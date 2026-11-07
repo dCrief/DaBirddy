@@ -539,6 +539,9 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         }
         if (data.cardsError) throw new Error('cards');
         cards = data.cards || [];
+        // A video's grid picture is its poster frame ("<id>_m.jpg"), which the
+        // ledger publishes next to it.
+        cards.forEach(function (c) { (c.photos || []).forEach(function (p) { if (isVid(p.full)) p.grid = p.full.replace(/\.(mp4|m4v|mov|webm)(\?.*)?$/i, '_m.jpg$2'); }); });
         loaded = true;
         SALE = data.sale || null;
         showSale();
@@ -699,12 +702,12 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     updateBuyBtn();
     $('slides').innerHTML = c.photos.map(function (p, i) {
       return '<div class="slide" data-i="' + i + '">' + (isVid(p.full)
-        ? '<video src="' + esc(p.full) + '#t=0.1" muted playsinline preload="metadata" aria-label="' + esc(c.title) + ' (video)"></video>' + PLAY
+        ? '<video src="' + esc(p.full) + '#t=0.1" poster="' + esc(p.grid) + '" muted playsinline preload="metadata" aria-label="' + esc(c.title) + ' (video)"></video>' + PLAY
         : '<img src="' + esc(p.full) + '" alt="' + esc(c.title) + (i ? ' (photo ' + (i + 1) + ')' : '') + '">') + '</div>';
     }).join('');
     $('thumbs').innerHTML = c.photos.length > 1 ? c.photos.map(function (p, i) {
       return '<button class="thumb' + (i ? '' : ' on') + '" data-i="' + i + '" aria-label="' + (isVid(p.full) ? 'Video ' : 'Photo ') + (i + 1) + '">' +
-        (isVid(p.full) ? '<video src="' + esc(p.full) + '#t=0.1" muted playsinline preload="metadata"></video>' + PLAY : '<img src="' + esc(p.grid) + '" alt="">') + '</button>';
+        '<img src="' + esc(p.grid) + '" alt="">' + (isVid(p.full) ? PLAY : '') + '</button>';
     }).join('') : '';
     updateNav();
     updateSaveBtn();
@@ -784,7 +787,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     z.scrollTo(0, 0);
     vid.pause();
     img.hidden = video; vid.hidden = !video;
-    if (video) { if (vid.getAttribute('src') !== p.full) vid.src = p.full; img.removeAttribute('src'); }
+    if (video) { if (vid.getAttribute('src') !== p.full) { vid.poster = p.grid; vid.src = p.full; } img.removeAttribute('src'); }
     else { img.src = p.full; img.alt = open.title + (zoomAt ? ' (photo ' + (zoomAt + 1) + ')' : ''); vid.removeAttribute('src'); vid.load(); }
     $('zCount').textContent = n > 1 ? (zoomAt + 1) + ' / ' + n : '';
     $('zPrev').hidden = n < 2 || zoomAt === 0;
