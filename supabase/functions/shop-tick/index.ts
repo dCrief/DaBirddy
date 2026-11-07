@@ -7,7 +7,8 @@
  *   3. Abandoned cart — a subscriber's cart (cart id = their browser id) left 2–48 hours
  *      with cards still for sale and nothing bought since. Once per cart change, and at
  *      most once every 3 days per email.
- *   4. "Notify me" alerts — new cards matching a saved search, each card once per email.
+ *   4. "Notify me" alerts — new cards matching a saved alert (words, plus optional kind of
+ *      listing and top price after any sale), each card once per email.
  *   5. Wishlist sale — once per sale per subscriber, when their saved cards are in it.
  *
  * Every send is claimed first (a shop_email_log row or an order timestamp), so a slow or
@@ -46,8 +47,8 @@ const unclaim = (kind: string, key: string, email: string) => db.from('shop_emai
 const photoUrl = (name: string | null | undefined) =>
   name ? db.storage.from('shop-photos').getPublicUrl(name.replace(/\.jpg$/, '_m.jpg')).data.publicUrl : null;
 
-type Listing = { id: string; title: string; set_name: string | null; card_number: string | null; variant: string | null; price: number; quantity: number; photos: string[] | null; published_at: string | null };
-const LISTING_COLS = 'id, title, set_name, card_number, variant, price, quantity, photos, published_at';
+type Listing = { id: string; title: string; set_name: string | null; card_number: string | null; variant: string | null; category: string; price: number; quantity: number; photos: string[] | null; published_at: string | null };
+const LISTING_COLS = 'id, title, set_name, card_number, variant, category, price, quantity, photos, published_at';
 
 function toMailCard(l: Listing, sale: Awaited<ReturnType<typeof activeSale>>): mail.MailCard {
   const list = Math.round(Number(l.price) * 100);
@@ -121,19 +122,21 @@ const words = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g
 async function alerts(sale: Awaited<ReturnType<typeof activeSale>>) {
   const { data: fresh } = await db.from('shop_listings').select(LISTING_COLS).eq('status', 'live').gt('quantity', 0).gte('published_at', ago(24 * HOUR)).limit(500);
   if (!fresh?.length) return;
-  const { data: list } = await db.from('shop_alerts').select('email, term, token, created_at').eq('active', true).limit(2000);
+  const { data: list } = await db.from('shop_alerts').select('email, term, token, category, max_price, created_at').eq('active', true).limit(2000);
   for (const a of list ?? []) {
     const want = words(a.term);
     if (!want.length) continue;
     const matches = (fresh as Listing[]).filter((l) => {
       if (!l.published_at || new Date(l.published_at) < new Date(a.created_at)) return false;
+      if (a.category && l.category !== a.category) return false;
+      if (a.max_price != null && salePrice(sale, l.id, Math.round(Number(l.price) * 100)) > Math.round(Number(a.max_price) * 100)) return false;
       const hay = new Set(words([l.title, l.variant, l.set_name, l.card_number].filter(Boolean).join(' ')));
       return want.every((w) => hay.has(w));
     });
     const cards: Listing[] = [];
     for (const l of matches) if (await claim('alert', l.id, a.email)) cards.push(l);
     if (!cards.length) continue;
-    if (!(await sendOne(() => mail.alert(a.email, a.token, a.term, cards.slice(0, 12).map((l) => toMailCard(l, sale)))))) {
+    if (!(await sendOne(() => mail.alert(a.email, a.token, a, cards.slice(0, 12).map((l) => toMailCard(l, sale)))))) {
       for (const l of cards) await unclaim('alert', l.id, a.email);
     }
   }
