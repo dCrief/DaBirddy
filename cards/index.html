@@ -523,8 +523,6 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
         if (data.shipping) {
           SHIP = { envelope: data.shipping.envelope, pkg: data.shipping.package, cutoff: data.shipping.envelopeUnder, maxCards: data.shipping.maxCards || 5 };
           OFFERS = { on: data.shipping.offers !== false, min: data.shipping.offerMinPercent || 50 };
-          $('shipFact').textContent = 'Ships with tracking: a protected envelope (' + money(SHIP.envelope) + ') for up to ' + SHIP.maxCards + ' cards under ' + money(SHIP.cutoff) +
-            ', a tracked package (' + money(SHIP.pkg) + ') for ' + money(SHIP.cutoff) + ' and up, more than ' + SHIP.maxCards + ' cards, or anything sealed.';
         }
         reconcileCart();
         restoreCart();
@@ -606,6 +604,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
       var badges = (c.listPrice ? '<span class="badge sale">' + SALE_PCT(c) + '% off</span>' : '') + (isNew(c) ? '<span class="badge new">New</span>' : '') +
         (c.category === 'graded' ? '<span class="badge">Graded</span>' : '') +
         (c.category === 'sealed' ? '<span class="badge">Sealed</span>' : '') +
+        (c.shipping === 'free' ? '<span class="badge">Free shipping</span>' : '') +
         (c.quantity > 1 ? '<span class="badge">' + c.quantity + ' available</span>' : '');
       return '<button class="tile' + (back ? ' has-back' : '') + '" data-id="' + c.id + '" style="animation-delay:' + Math.min(i, 12) * 0.03 + 's">' +
         '<div class="shot">' +
@@ -651,6 +650,14 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   });
 
   // ── Card sheet ──
+  // Shipping line on the card page: the shop's rule, or this listing's own choice from the ledger.
+  function shipText(c) {
+    if (c.shipping === 'free') return 'Ships free with tracking. Anything else you add to the same order ships free too.';
+    if (c.shipping === 'package') return 'Ships with tracking in a tracked package (' + money(SHIP.pkg) + ').';
+    if (c.shipping === 'envelope') return 'Ships with tracking in a protected envelope (' + money(SHIP.envelope) + '), or a package (' + money(SHIP.pkg) + ') if your order has more than ' + SHIP.maxCards + ' cards or something that needs one.';
+    return 'Ships with tracking: a protected envelope (' + money(SHIP.envelope) + ') for up to ' + SHIP.maxCards + ' cards under ' + money(SHIP.cutoff) +
+      ', a tracked package (' + money(SHIP.pkg) + ') for ' + money(SHIP.cutoff) + ' and up, more than ' + SHIP.maxCards + ' cards, or anything sealed.';
+  }
   function openCard(id, push) {
     var c = cards.filter(function (x) { return x.id === id; })[0];
     if (!c) return;
@@ -661,6 +668,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     $('cSub').textContent = sub(c);
     $('cPrice').innerHTML = money(c.price) + (c.listPrice ? '<s>' + money(c.listPrice) + '</s>' : '') + (c.quantity > 1 ? '<span class="qty-left">' + c.quantity + ' available</span>' : '');
     $('cDesc').textContent = c.description || '';
+    $('shipFact').textContent = shipText(c);
     $('returnFact').innerHTML = c.category === 'sealed'
       ? 'Sealed product is final sale and can’t be returned. If it arrives damaged, we’ll make it right. <a href="policies.html#returns">Our policy</a>'
       : 'Not what you expected? Return it within 14 days of delivery for a refund. <a href="policies.html#returns">How returns work</a>';
@@ -813,9 +821,18 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   function linePrice(l, c) { return l.offer && l.price > 0 ? l.price : c.price; }
   function dropOffer(l) { delete l.offer; delete l.price; delete l.exp; }
   function totals() {
-    var sub = 0, sealed = false, n = 0;
-    cart.forEach(function (l) { var c = byId(l.id); if (!c) return; sub += linePrice(l, c) * l.qty; n += l.qty; if (c.category === 'sealed') sealed = true; });
-    var env = !sealed && n <= (SHIP.maxCards || 5) && sub < SHIP.cutoff;
+    // Same rule as the checkout (shippingFor): a listing set to Package boxes the whole cart, Envelope
+    // listings skip the sealed and price checks, and any Free listing makes the order ship free.
+    var sub = 0, ruled = 0, bulky = false, free = false, n = 0;
+    cart.forEach(function (l) {
+      var c = byId(l.id); if (!c) return;
+      var line = linePrice(l, c) * l.qty;
+      sub += line; n += l.qty;
+      if (c.shipping === 'package') bulky = true;
+      if (c.shipping === 'free') free = true;
+      if (c.shipping !== 'envelope') { ruled += line; if (c.category === 'sealed') bulky = true; }
+    });
+    var env = !bulky && n <= (SHIP.maxCards || 5) && ruled < SHIP.cutoff;
     // Coupons only come off cards at their listed price, never off an accepted offer.
     var eligible = 0;
     cart.forEach(function (l) { var c = byId(l.id); if (c && !l.offer) eligible += c.price * l.qty; });
@@ -823,7 +840,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var disc = !coupon || !eligible || short ? 0
       : coupon.amountOff ? Math.min(coupon.amountOff, eligible)
       : Math.min(Math.round(eligible * coupon.percent / 100), coupon.maxOff || Infinity, eligible);
-    return { sub: sub, n: n, method: env ? 'envelope' : 'package', ship: n ? (env ? SHIP.envelope : SHIP.pkg) : 0, eligible: eligible, disc: disc, short: short };
+    return { sub: sub, n: n, method: env ? 'envelope' : 'package', free: free, ship: n && !free ? (env ? SHIP.envelope : SHIP.pkg) : 0, eligible: eligible, disc: disc, short: short };
   }
   function renderCart() {
     var t = totals();
@@ -847,7 +864,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
       $('cartFoot').hidden = false;
       $('sumCards').textContent = money(t.sub);
       $('shipLabel').textContent = t.method === 'envelope' ? 'Shipping · tracked envelope' : 'Shipping · tracked package';
-      $('sumShip').textContent = money(t.ship);
+      $('sumShip').textContent = t.free ? 'Free' : money(t.ship);
       $('sumTotal').textContent = money(t.sub - t.disc + t.ship);
       renderCoupon(t);
     }

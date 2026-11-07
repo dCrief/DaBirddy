@@ -92,13 +92,23 @@ export async function loadSettings(): Promise<Settings> {
   return data as Settings;
 }
 
-/** Envelope for a few cards under the cutoff; a package for more cards, a bigger total, or anything sealed. */
-export function shippingFor(items: Pick<OrderItem, 'price_cents' | 'qty' | 'category'>[], s: Pick<Settings, 'envelope_cents' | 'package_cents' | 'envelope_under_cents' | 'envelope_max_cards'>) {
+/** Per-listing shipping choice from the ledger (shop_listings.shipping). */
+export type ShipChoice = 'auto' | 'envelope' | 'package' | 'free';
+
+/**
+ * Envelope for a few cards under the cutoff; a package for more cards, a bigger total, or anything sealed.
+ * Listings can override that: `package` puts the whole cart in a package, `envelope` items skip the
+ * sealed and price checks (the card limit still applies), and any `free` item makes the order ship free.
+ */
+export function shippingFor(items: (Pick<OrderItem, 'price_cents' | 'qty' | 'category'> & { ship?: ShipChoice | null })[], s: Pick<Settings, 'envelope_cents' | 'package_cents' | 'envelope_under_cents' | 'envelope_max_cards'>) {
   const subtotal = items.reduce((n, it) => n + it.price_cents * it.qty, 0);
   const cards = items.reduce((n, it) => n + it.qty, 0);
-  const bulky = items.some((it) => it.category === 'sealed') || cards > (s.envelope_max_cards ?? 5);
-  const method: 'envelope' | 'package' = !bulky && subtotal < s.envelope_under_cents ? 'envelope' : 'package';
-  return { method, cents: method === 'envelope' ? s.envelope_cents : s.package_cents, subtotal };
+  const ruled = items.filter((it) => it.ship !== 'envelope');
+  const ruledTotal = ruled.reduce((n, it) => n + it.price_cents * it.qty, 0);
+  const bulky = items.some((it) => it.ship === 'package') || ruled.some((it) => it.category === 'sealed') || cards > (s.envelope_max_cards ?? 5);
+  const method: 'envelope' | 'package' = !bulky && ruledTotal < s.envelope_under_cents ? 'envelope' : 'package';
+  const free = items.some((it) => it.ship === 'free');
+  return { method, cents: free ? 0 : method === 'envelope' ? s.envelope_cents : s.package_cents, subtotal, free };
 }
 
 export const usd = (cents: number) => (cents / 100).toFixed(2);

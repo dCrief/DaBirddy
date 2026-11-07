@@ -21,7 +21,7 @@
 
 import Stripe from 'npm:stripe@17';
 import { corsHeaders, json } from '../_shared/shop.ts';
-import { db, loadSettings, shippingFor, type OrderItem } from '../_shared/cards.ts';
+import { db, loadSettings, shippingFor, type OrderItem, type ShipChoice } from '../_shared/cards.ts';
 import { activeSale, salePrice } from '../_shared/sale.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', { httpClient: Stripe.createFetchHttpClient() });
@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
 
     const { data: listings, error } = await db
       .from('shop_listings')
-      .select('id, title, set_name, card_number, variant, category, price, photos, status, owner_id')
+      .select('id, title, set_name, card_number, variant, category, shipping, price, photos, status, owner_id')
       .in('id', cart.map((c) => c.id));
     if (error) throw error;
     const byId = new Map((listings ?? []).map((l) => [l.id, l]));
@@ -137,7 +137,7 @@ Deno.serve(async (req) => {
       };
     });
     const settings = await loadSettings();
-    const ship = shippingFor(items, settings);
+    const ship = shippingFor(items.map((it) => ({ ...it, ship: (byId.get(it.listing_id)!.shipping ?? 'auto') as ShipChoice })), settings);
 
     // Coupons come off the cards at their listed price only, never off an accepted or countered offer.
     let discount = 0;
@@ -223,7 +223,9 @@ Deno.serve(async (req) => {
       shipping_options: [{
         shipping_rate_data: {
           type: 'fixed_amount',
-          display_name: ship.method === 'envelope' ? 'Tracked envelope' : 'Tracked package (USPS Ground Advantage)',
+          display_name: ship.free
+            ? (ship.method === 'envelope' ? 'Free shipping · tracked envelope' : 'Free shipping · tracked package')
+            : ship.method === 'envelope' ? 'Tracked envelope' : 'Tracked package (USPS Ground Advantage)',
           fixed_amount: { amount: ship.cents, currency: 'usd' },
           delivery_estimate: {
             minimum: { unit: 'business_day', value: ship.method === 'envelope' ? 3 : 2 },
