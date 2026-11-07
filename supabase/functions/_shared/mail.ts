@@ -7,7 +7,8 @@ import { db } from './cards.ts';
  *   shipped        — order is on its way, with tracking
  *   reviewRequest  — a week after shipping: leave a verified review
  *   cartReminder   — cards still in a cart the shopper left (subscribers only)
- *   alert          — new cards matching a "notify me" search
+ *   alert          — new cards matching a "notify me" alert (Pokémon + optional kind and top price)
+ *   manageAlerts   — a link to cards/alerts.html, where a shopper edits all their alerts
  *   wishlistSale   — wishlist cards in a flash sale (subscribers only)
  *   welcome / alertConfirm — right after signing up
  *
@@ -118,14 +119,37 @@ export async function cartReminder(email: string, token: string, cartId: string,
   return send(email, cards.length === 1 ? `Still want ${cards[0].title}?` : 'Your cards are still in your cart', html, text);
 }
 
-export async function alert(email: string, token: string, term: string, cards: MailCard[]) {
+/** One saved alert: what to watch for, and optional filters. */
+export type AlertFor = { term: string; category?: string | null; max_price?: number | string | null };
+const KIND: Record<string, string> = { single: 'singles', graded: 'graded cards', sealed: 'sealed product', bundle: 'bundles and lots' };
+/** "Charizard (graded cards, up to $150)" */
+export function alertLabel(a: AlertFor) {
+  const top = a.max_price == null ? null : Number(a.max_price);
+  const bits = [a.category ? KIND[a.category] : null, top != null ? `up to $${top % 1 ? top.toFixed(2) : top}` : null].filter(Boolean);
+  return bits.length ? `${a.term} (${bits.join(', ')})` : a.term;
+}
+const manageLink = (token: string) => `${SITE}/alerts.html?u=${token}`;
+const manageLine = (token: string) =>
+  `<p style="margin:18px 0 0;color:#666;font-size:13px;line-height:1.5">Want other Pokémon, only graded cards, or a top price? <a href="${esc(manageLink(token))}" style="color:#e11d48">Manage your alerts</a>.</p>`;
+
+export async function alert(email: string, token: string, a: AlertFor, cards: MailCard[]) {
   const stop = `${SITE}/unsubscribe.html?u=${token}`;
+  const term = a.term;
   const html = page(`New ${term} cards just listed`,
-    para(`You asked us to tell you when ${esc(term)} cards come in. ${cards.length === 1 ? 'This one' : 'These'} just went up:`) +
-    cardRows(cards) + button(SITE, 'See them on the site'),
+    para(`You asked us to tell you when <b>${esc(alertLabel(a))}</b> comes in. ${cards.length === 1 ? 'This one' : 'These'} just went up:`) +
+    cardRows(cards) + button(SITE, 'See them on the site') + manageLine(token),
     { href: stop, label: `Stop ${term} alerts` });
-  const text = `New ${term} cards just listed:\n${cardText(cards)}\n\nStop these alerts: ${stop}`;
+  const text = `New ${term} cards just listed:\n${cardText(cards)}\n\nManage your alerts: ${manageLink(token)}\nStop these alerts: ${stop}`;
   return send(email, `New ${term} ${cards.length === 1 ? 'card' : 'cards'} at DaBirddy`, html, text);
+}
+
+export async function manageAlerts(email: string, token: string) {
+  const link = manageLink(token);
+  const html = page('Manage your card alerts',
+    para('Here’s your link to see every Pokémon you’re watching for on dabirddy.com/cards. Add new ones, change the kind of cards or the top price, or stop any of them.') +
+    button(link, 'Manage my alerts') +
+    `<p style="margin:22px 0 0;color:#666;font-size:13px;line-height:1.5">Didn’t ask for this? You can ignore it. Nothing changes unless you use the link.</p>`);
+  return send(email, 'Your DaBirddy card alerts', html, `Manage your card alerts: ${link}\n\nDidn't ask for this? You can ignore it.`);
 }
 
 export async function wishlistSale(email: string, token: string, sale: { name: string; percent: number; ends_at: string }, cards: MailCard[]) {
@@ -149,11 +173,12 @@ export async function welcome(email: string, token: string) {
   return send(email, 'You’re on the DaBirddy list', html, `Thanks for signing up! We'll email you about new drops, flash sales and coupon codes.\n\nBrowse: ${SITE}\nUnsubscribe: ${unsub}`);
 }
 
-export async function alertConfirm(email: string, token: string, term: string) {
+export async function alertConfirm(email: string, token: string, a: AlertFor) {
   const stop = `${SITE}/unsubscribe.html?u=${token}`;
-  const html = page(`We’ll watch for ${term}`,
-    para(`When new <b>${esc(term)}</b> cards are listed on dabirddy.com/cards, we’ll email you right away.`) +
-    button(SITE, 'Browse the cards'),
-    { href: stop, label: `Stop ${term} alerts` });
-  return send(email, `Alert set: ${term} cards`, html, `When new ${term} cards are listed, we'll email you.\n\nStop these alerts: ${stop}`);
+  const html = page(`We’ll watch for ${a.term}`,
+    para(`When new <b>${esc(alertLabel(a))}</b> cards are listed on dabirddy.com/cards, we’ll email you right away.`) +
+    button(manageLink(token), 'Manage my alerts') +
+    `<p style="margin:18px 0 0;color:#666;font-size:13px;line-height:1.5">Use that link any time to add more Pokémon, change the kind of cards or top price, or stop an alert.</p>`,
+    { href: stop, label: `Stop ${a.term} alerts` });
+  return send(email, `Alert set: ${a.term} cards`, html, `When new ${alertLabel(a)} cards are listed, we'll email you.\n\nManage your alerts: ${manageLink(token)}\nStop these alerts: ${stop}`);
 }

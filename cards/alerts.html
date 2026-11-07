@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Card Alerts &mdash; DaBirddy Cards</title>
+  <meta name="description" content="Pick the Pokémon you collect and DaBirddy will email you the moment a matching card is listed. Narrow it to graded cards, sealed product or a top price.">
+  <meta name="theme-color" content="#0d0d0f">
+  <link rel="icon" type="image/jpeg" href="../logo.jpg">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    :root { --bg: #0d0d0f; --surface: #17171c; --surface2: #202027; --line: rgba(255,255,255,0.07); --line2: rgba(255,255,255,0.14); --accent: #ff4d6d; --accent2: #ffd166; --accent3: #4ade80; --text: #f0ede8; --muted: #8d8b93; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', system-ui, sans-serif; min-height: 100vh; }
+    a { color: var(--accent2); }
+    button, input, select { font: inherit; color: inherit; }
+    .top { max-width: 820px; margin: 0 auto; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .top a { color: var(--muted); text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+    .top a:hover { color: var(--text); }
+    .top .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-family: 'Bebas Neue', sans-serif; font-size: 1.45rem; letter-spacing: 2px; font-weight: 400; }
+    .top .brand img { width: 30px; height: 30px; border-radius: 8px; }
+    main { max-width: 820px; margin: 0 auto; padding: 10px 16px 0; }
+    h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(2.3rem, 7vw, 3.2rem); letter-spacing: 2px; line-height: 1; font-weight: 400; }
+    h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.7rem; letter-spacing: 1.5px; font-weight: 400; }
+    .lead { color: #cfccd4; line-height: 1.6; margin-top: 10px; max-width: 60ch; }
+    .muted { color: var(--muted); line-height: 1.6; font-size: 0.9rem; }
+    .box { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 20px; margin-top: 18px; }
+    form { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+    label { display: flex; flex-direction: column; gap: 6px; font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    label small { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 0.8rem; }
+    input, select { font-size: 16px; text-transform: none; letter-spacing: 0; background: var(--bg); border: 1px solid var(--line2); border-radius: 10px; padding: 0 12px; min-height: 46px; width: 100%; color: var(--text); font-weight: 400; }
+    select { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
+    .money { position: relative; }
+    .money span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 16px; font-weight: 400; }
+    .money input { padding-left: 24px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 20px; border-radius: 12px; font-weight: 700; border: 0; cursor: pointer; background: linear-gradient(135deg, var(--accent), #e0284b); color: #fff; text-decoration: none; }
+    .btn.ghost { background: var(--surface2); border: 1px solid var(--line2); }
+    .btn.small { min-height: 38px; padding: 0 14px; font-size: 0.85rem; border-radius: 10px; }
+    .btn:disabled { opacity: 0.6; cursor: default; }
+    .quick { display: flex; flex-wrap: wrap; gap: 8px; }
+    .quick button { background: var(--surface2); border: 1px solid var(--line2); border-radius: 999px; padding: 6px 12px; font-size: 0.85rem; cursor: pointer; color: #cfccd4; }
+    .quick button:hover { color: var(--text); border-color: var(--accent2); }
+    .msg { font-size: 0.9rem; line-height: 1.5; }
+    .msg:empty { display: none; }
+    .msg.ok { color: var(--accent3); } .msg.bad { color: #ff8fa3; }
+    .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+    .list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+    .alert { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; align-items: center; }
+    .alert.off { opacity: 0.6; }
+    .alert .name { font-weight: 700; font-size: 1.05rem; overflow-wrap: anywhere; }
+    .alert .state { font-size: 0.78rem; font-weight: 700; color: var(--accent3); margin-left: 8px; }
+    .alert.off .state { color: var(--muted); }
+    .alert .opts { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .alert .opts select, .alert .opts input { min-height: 40px; font-size: 16px; }
+    .alert .note { grid-column: 1 / -1; font-size: 0.8rem; }
+    .who { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; margin-top: 6px; }
+    .linkbtn { background: none; border: 0; color: var(--accent2); text-decoration: underline; cursor: pointer; font-size: 0.85rem; padding: 0; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <a href="./">&#8249; All cards</a>
+    <a class="brand" href="./"><img src="../logo.jpg" alt="">DaBirddy</a>
+    <a href="policies.html#privacy">Privacy</a>
+  </div>
+  <main>
+    <h1>Card Alerts</h1>
+    <p class="lead">Tell us which Pokémon you collect, and we’ll email you as soon as a matching card goes up. Cards here are one of a kind, so the first to see them gets them.</p>
+
+    <section class="box" id="addBox">
+      <h2 id="addTitle">Add an alert</h2>
+      <form id="addForm" novalidate>
+        <label>Pokémon or card
+          <input id="term" list="pokemon" maxlength="60" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Charizard, Umbreon, Pikachu…" required>
+          <small>Any Pokémon name, or words from a card like “Charizard ex” or “151”.</small>
+        </label>
+        <datalist id="pokemon"></datalist>
+        <div class="quick" id="quick" aria-label="Popular picks"></div>
+        <div class="grid2">
+          <label>Kind of cards
+            <select id="cat">
+              <option value="">Anything</option>
+              <option value="single">Singles (raw cards)</option>
+              <option value="graded">Graded slabs</option>
+              <option value="sealed">Sealed product</option>
+              <option value="bundle">Bundles &amp; lots</option>
+            </select>
+          </label>
+          <label>Top price <small>(optional)</small>
+            <div class="money"><span>$</span><input id="max" type="number" inputmode="decimal" min="1" max="100000" step="0.01" placeholder="Any price"></div>
+          </label>
+        </div>
+        <label id="emailLabel">Your email
+          <input id="email" type="email" autocomplete="email" placeholder="you@email.com" required>
+        </label>
+        <input class="hp" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div><button class="btn" type="submit" id="addBtn">Add alert</button></div>
+        <div class="msg" id="addMsg" role="status"></div>
+      </form>
+      <p class="muted" style="margin-top:12px;font-size:.82rem">One email when matching cards are listed, never more than once per card. Every alert email has a link to change or stop it.</p>
+    </section>
+
+    <section class="box" id="mineBox" hidden>
+      <h2>Your alerts</h2>
+      <div class="who muted"><span id="mineEmail"></span><button class="linkbtn" id="forget" type="button">Not you?</button></div>
+      <div class="list" id="list"></div>
+      <div class="msg" id="listMsg" role="status"></div>
+    </section>
+
+    <section class="box" id="linkBox">
+      <h2>Already have alerts?</h2>
+      <p class="muted" style="margin-top:6px">Enter your email and we’ll send you a link to see, change or stop them.</p>
+      <form id="linkForm" novalidate>
+        <div style="display:flex;gap:8px"><input id="linkEmail" type="email" autocomplete="email" placeholder="you@email.com" aria-label="Email address" style="flex:1;min-width:0"><button class="btn" type="submit" id="linkBtn">Send link</button></div>
+        <input class="hp" id="linkHp" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div class="msg" id="linkMsg" role="status"></div>
+      </form>
+    </section>
+  </main>
+  <footer id="siteFooter"></footer>
+
+  <script src="pokemon.js"></script>
+  <script src="site.js"></script>
+  <script>
+  (function () {
+    var D = window.DaBirddy, API = D.api;
+    var $ = function (id) { return document.getElementById(id); };
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+    var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    var KIND = { '': 'Anything', single: 'Singles', graded: 'Graded', sealed: 'Sealed', bundle: 'Bundles & lots' };
+    var store = {
+      get: function (k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+      set: function (k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} },
+    };
+    function myEmail() {
+      try { return store.get('dabirddy_email') || (JSON.parse(store.get('dabirddy_offer_me') || '{}').email) || ''; } catch (e) { return ''; }
+    }
+    function say(el, text, kind) { el.className = 'msg' + (kind ? ' ' + kind : ''); el.textContent = text; }
+
+    // ── Pokémon suggestions ──
+    $('pokemon').innerHTML = (window.POKEMON || []).map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
+    ['Charizard', 'Pikachu', 'Umbreon', 'Gengar', 'Mewtwo', 'Eevee', 'Rayquaza', 'Lugia'].forEach(function (n) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = n;
+      b.addEventListener('click', function () { $('term').value = n; $('term').focus(); });
+      $('quick').appendChild(b);
+    });
+
+    var params = new URLSearchParams(location.search);
+    if (params.get('term')) $('term').value = params.get('term').slice(0, 60);
+    if (params.get('cat') && KIND[params.get('cat')]) $('cat').value = params.get('cat');
+    $('email').value = myEmail();
+    $('linkEmail').value = myEmail();
+
+    // ── The manage link from an email: ?u=<token>. Remembered on this device. ──
+    var fromLink = !!params.get('u');
+    var u = params.get('u') || store.get('dabirddy_alerts_u');
+    if (params.get('u')) { // keep the token out of the address bar (and screenshots / shares)
+      store.set('dabirddy_alerts_u', params.get('u'));
+      params.delete('u');
+      history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + location.hash);
+    }
+    var mine = null; // { email, alerts }
+
+    function loadMine() {
+      if (!/^[0-9a-f]{16,64}$/i.test(u || '')) { u = ''; showMine(); return; }
+      fetch(API + '?alerts=' + encodeURIComponent(u)).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); }).then(function (x) {
+        if (!x.ok) { if (fromLink) say($('linkMsg'), x.d.error || 'That link isn’t valid. Ask for a new one.', 'bad'); store.set('dabirddy_alerts_u', ''); u = ''; mine = null; showMine(); return; }
+        mine = x.d; store.set('dabirddy_email', mine.email); showMine();
+      }, function () { say($('listMsg'), 'Couldn’t load your alerts. Check your connection and refresh.', 'bad'); });
+    }
+
+    function showMine() {
+      var on = !!(u && mine);
+      $('mineBox').hidden = !on;
+      $('linkBox').hidden = on;
+      $('emailLabel').hidden = on;
+      if (!on) return;
+      $('mineEmail').textContent = 'Alerts for ' + mine.email;
+      $('email').value = mine.email;
+      if (!mine.alerts.length) { $('list').innerHTML = '<p class="muted">No alerts yet. Add one above.</p>'; return; }
+      $('list').innerHTML = mine.alerts.map(function (a) {
+        return '<div class="alert' + (a.active ? '' : ' off') + '" data-id="' + a.id + '">' +
+          '<div><span class="name">' + esc(a.term) + '</span><span class="state">' + (a.active ? 'On' : 'Stopped') + '</span></div>' +
+          '<button class="btn small ghost" data-toggle type="button">' + (a.active ? 'Stop' : 'Turn on') + '</button>' +
+          '<div class="opts">' +
+            '<select data-cat aria-label="Kind of cards for ' + esc(a.term) + '">' + Object.keys(KIND).map(function (k) { return '<option value="' + k + '"' + ((a.category || '') === k ? ' selected' : '') + '>' + esc(KIND[k]) + '</option>'; }).join('') + '</select>' +
+            '<div class="money"><span>$</span><input data-max type="number" inputmode="decimal" min="1" max="100000" step="0.01" placeholder="Any price" value="' + (a.max_price == null ? '' : a.max_price) + '" aria-label="Top price for ' + esc(a.term) + '"></div>' +
+          '</div><div class="note msg" role="status"></div></div>';
+      }).join('');
+    }
+
+    function update(row, patch) {
+      var note = row.querySelector('.note');
+      say(note, 'Saving…');
+      patch.action = 'alert-update'; patch.u = u; patch.id = row.getAttribute('data-id');
+      return D.post(patch).then(function (x) {
+        if (!x.ok) { say(note, x.d.error || 'Couldn’t save that. Please try again.', 'bad'); return; }
+        mine.alerts = mine.alerts.map(function (a) { return a.id === x.d.alert.id ? x.d.alert : a; });
+        if ('active' in patch) { showMine(); return; }
+        say(note, 'Saved', 'ok');
+        setTimeout(function () { if (note.textContent === 'Saved') say(note, ''); }, 1800);
+      }, function () { say(note, 'Couldn’t reach us. Check your connection and try again.', 'bad'); });
+    }
+    $('list').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-toggle]'); if (!b) return;
+      var row = b.closest('[data-id]'), a = mine.alerts.filter(function (x) { return x.id === row.getAttribute('data-id'); })[0];
+      b.disabled = true;
+      update(row, { active: !a.active }).then(function () { b.disabled = false; });
+    });
+    $('list').addEventListener('change', function (e) {
+      var row = e.target.closest('[data-id]'); if (!row) return;
+      if (e.target.hasAttribute('data-cat')) update(row, { category: e.target.value || null });
+      if (e.target.hasAttribute('data-max')) {
+        var v = e.target.value.trim();
+        if (v && !(Number(v) >= 1)) { say(row.querySelector('.note'), 'Enter a top price of $1 or more, or leave it blank for any price.', 'bad'); return; }
+        update(row, { max_price: v ? Number(v) : null });
+      }
+    });
+    $('forget').addEventListener('click', function () { store.set('dabirddy_alerts_u', ''); u = ''; mine = null; $('email').value = ''; showMine(); });
+
+    // ── Add an alert ──
+    $('addForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      if ($('hp').value) return;
+      var term = $('term').value.trim().replace(/\s+/g, ' '), email = $('email').value.trim(), max = $('max').value.trim(), msg = $('addMsg'), btn = $('addBtn');
+      if (term.length < 2) { say(msg, 'Which Pokémon should we watch for?', 'bad'); $('term').focus(); return; }
+      if (max && !(Number(max) >= 1)) { say(msg, 'Enter a top price of $1 or more, or leave it blank for any price.', 'bad'); $('max').focus(); return; }
+      if (!mine && !EMAIL.test(email)) { say(msg, 'Enter your email address so we can tell you.', 'bad'); $('email').focus(); return; }
+      var body = { action: 'alert', term: term, category: $('cat').value || null, max_price: max ? Number(max) : null, vid: D.vid() || undefined };
+      if (mine) body.u = u; else body.email = email;
+      btn.disabled = true; say(msg, 'Saving…');
+      D.post(body).then(function (x) {
+        btn.disabled = false;
+        if (!x.ok) { say(msg, x.d.error || 'Couldn’t save that. Please try again.', 'bad'); return; }
+        store.set('dabirddy_email', mine ? mine.email : email);
+        var bits = [$('cat').value ? KIND[$('cat').value].toLowerCase() : '', max ? 'up to $' + Number(max) : ''].filter(Boolean).join(', ');
+        say(msg, (x.d.updated ? 'Updated! ' : 'Done! ') + 'We’ll email you when new ' + term + ' cards are listed' + (bits ? ' (' + bits + ')' : '') + '.' + (mine ? '' : ' Check your inbox for a link to manage all your alerts.'), 'ok');
+        $('term').value = ''; $('max').value = ''; $('cat').value = '';
+        if (mine && x.d.alert) { mine.alerts = [x.d.alert].concat(mine.alerts.filter(function (a) { return a.id !== x.d.alert.id; })); showMine(); }
+      }, function () { btn.disabled = false; say(msg, 'Couldn’t reach us. Check your connection and try again.', 'bad'); });
+    });
+
+    // ── Email me a manage link ──
+    $('linkForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      if ($('linkHp').value) return;
+      var email = $('linkEmail').value.trim(), msg = $('linkMsg'), btn = $('linkBtn');
+      if (!EMAIL.test(email)) { say(msg, 'Enter your email address.', 'bad'); return; }
+      btn.disabled = true; say(msg, 'Sending…');
+      D.post({ action: 'alerts-link', email: email }).then(function (x) {
+        btn.disabled = false;
+        if (!x.ok) { say(msg, x.d.error || 'Couldn’t send that. Please try again.', 'bad'); return; }
+        say(msg, 'If that email has any alerts, a link to manage them is on its way. It can take a minute.', 'ok');
+      }, function () { btn.disabled = false; say(msg, 'Couldn’t reach us. Check your connection and try again.', 'bad'); });
+    });
+
+    loadMine();
+  })();
+  </script>
+</body>
+</html>

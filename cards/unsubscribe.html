@@ -27,12 +27,14 @@
     <button class="btn" id="go">Unsubscribe</button>
     <p style="font-size:.85rem;color:#8d8b93">Order emails (receipts and shipping updates) still come for anything you buy.</p>
     <a class="btn" href="./" style="background:#202027;border:1px solid rgba(255,255,255,0.14)">Back to the cards</a>
+    <p style="font-size:.85rem"><a id="manage" href="alerts.html">Change your card alerts instead</a></p>
   </main>
   <script>
   (function () {
     var API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1/shop-public';
     var u = new URLSearchParams(location.search).get('u') || '';
     var $ = function (id) { return document.getElementById(id); };
+    if (/^[0-9a-f]{16,64}$/i.test(u)) $('manage').href = 'alerts.html?u=' + u;
     if (!/^[0-9a-f]{16,64}$/i.test(u)) { $('msg').textContent = 'This unsubscribe link isn’t complete. Use the link from the bottom of our email, or email dabirddy@gmail.com and we’ll take you off.'; $('go').hidden = true; return; }
     // A click (not just opening the page) unsubscribes, so link scanners in mail apps can't do it by accident.
     $('go').addEventListener('click', function () {

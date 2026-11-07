@@ -6,7 +6,10 @@
  * GET  ?review=<order id>&t=<review token>   the order a review link is for (+ its review)
  * POST { action: 'review', o, t, rating, body, name }   leave or edit that order's review
  * POST { action: 'subscribe', email, vid?, source? }    join the email list (welcome email once)
- * POST { action: 'alert', email, term, vid? }           "notify me" when matching cards list
+ * POST { action: 'alert', email | u, term, category?, max_price?, vid? }   "notify me" when matching cards list
+ * GET  ?alerts=<token>          every alert on the email that token belongs to (alerts.html)
+ * POST { action: 'alert-update', u, id, active?, category?, max_price? }   edit, stop or resume one alert
+ * POST { action: 'alerts-link', email }                 email a "manage your alerts" link
  * POST { action: 'wishlist', vid, ids }                 the browser's saved cards (whole set)
  * POST { action: 'event', vid, type, path, listing_id?, ref?, utm_source?, utm_medium?, utm_campaign? }
  * POST { action: 'unsubscribe', u }                     an email's unsubscribe/stop-alert token
@@ -24,6 +27,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@<>()",;:]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/;
 const TOKEN = /^[0-9a-f]{16,64}$/i;
 const BOT = /bot|crawl|spider|slurp|preview|headless|lighthouse|facebookexternalhit|embedly|monitor|curl|wget|python|go-http/i;
+const CATEGORIES = new Set(['single', 'graded', 'sealed', 'bundle']);
 const EVENTS = new Set(['view', 'card', 'add', 'checkout', 'signup', 'wishlist', 'alert']);
 
 const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
@@ -45,6 +49,38 @@ async function reviewOrder(o: unknown, t: unknown) {
   if (!data || data.review_token !== t || !data.paid_at || data.status !== 'shipped') return null;
   return data;
 }
+
+/** The email an alert or subscriber token belongs to (the token is only ever sent to that email). */
+async function tokenEmail(u: unknown): Promise<string | null> {
+  if (typeof u !== 'string' || !TOKEN.test(u)) return null;
+  const { data: a } = await db.from('shop_alerts').select('email').eq('token', u).maybeSingle();
+  if (a) return a.email;
+  const { data: s } = await db.from('shop_subscribers').select('email').eq('token', u).maybeSingle();
+  return s?.email ?? null;
+}
+
+/** category / max_price from a request: undefined = not given, null = any. Throws a message when bad. */
+function alertFilters(b: Record<string, unknown>) {
+  const out: { category?: string | null; max_price?: number | null } = {};
+  if ('category' in b) {
+    const c = b.category == null || b.category === '' || b.category === 'any' ? null : String(b.category);
+    if (c !== null && !CATEGORIES.has(c)) throw new Error('Pick what kind of cards to watch for.');
+    out.category = c;
+  }
+  if ('max_price' in b) {
+    if (b.max_price == null || b.max_price === '') out.max_price = null;
+    else {
+      const n = Number(b.max_price);
+      if (!Number.isFinite(n) || n < 1 || n > 100000) throw new Error('Enter a top price between $1 and $100,000, or leave it blank.');
+      out.max_price = Math.round(n * 100) / 100;
+    }
+  }
+  return out;
+}
+
+const ALERT_COLS = 'id, term, category, max_price, active, created_at';
+const alertOut = (a: { id: string; term: string; category: string | null; max_price: number | string | null; active: boolean }) =>
+  ({ id: a.id, term: a.term, category: a.category, max_price: a.max_price == null ? null : Number(a.max_price), active: a.active });
 
 async function reviews(req: Request) {
   const { data, error } = await db.from('shop_reviews').select('id, rating, body, display_name, created_at, order_id').eq('hidden', false).order('created_at', { ascending: false }).limit(200);
@@ -83,6 +119,13 @@ Deno.serve(async (req) => {
         }
         const items = (c.items as { id: string; qty: number; offer?: boolean }[]).filter((it) => !it.offer).map((it) => ({ id: it.id, qty: it.qty }));
         return json(req, { items }, 200, { 'Cache-Control': 'no-store' });
+      }
+      if (q.has('alerts')) {
+        const email = await tokenEmail(q.get('alerts'));
+        if (!email) return json(req, { error: 'This link isn’t valid. Ask for a new one below.' }, 404, { 'Cache-Control': 'no-store' });
+        const { data, error } = await db.from('shop_alerts').select(ALERT_COLS).eq('email', email).order('created_at', { ascending: false }).limit(100);
+        if (error) throw error;
+        return json(req, { email, alerts: (data ?? []).map(alertOut) }, 200, { 'Cache-Control': 'no-store' });
       }
       if (q.has('review')) {
         const o = await reviewOrder(q.get('review'), q.get('t'));
@@ -137,17 +180,63 @@ Deno.serve(async (req) => {
 
       case 'alert': {
         if (b.website) return json(req, { ok: true });
-        const email = str(b.email, 254)?.toLowerCase();
+        const viaLink = b.u != null ? await tokenEmail(b.u) : null; // added from the manage page
+        if (b.u != null && !viaLink) return json(req, { error: 'This link isn’t valid. Ask for a new one below.' }, 403);
+        const email = viaLink ?? str(b.email, 254)?.toLowerCase();
         if (!email || !EMAIL.test(email)) return json(req, { error: 'That email doesn’t look right.' }, 400);
         const term = clean(b.term, 60)?.replace(/\s+/g, ' ');
         if (!term || term.length < 2) return json(req, { error: 'What should we watch for?' }, 400);
-        const { count } = await db.from('shop_alerts').select('id', { count: 'exact', head: true }).eq('email', email).eq('active', true);
-        if ((count ?? 0) >= 25) return json(req, { error: 'That email already has 25 alerts. Stop one from an alert email first.' }, 400);
-        const { data: a, error } = await db.from('shop_alerts').upsert({ email, term, active: true }, { onConflict: 'email,term' }).select('token, term').single();
+        let filters;
+        try { filters = alertFilters(b); } catch (e) { return json(req, { error: (e as Error).message }, 400); }
+        const { data: same } = await db.from('shop_alerts').select('id').eq('email', email).ilike('term', term.replace(/[\\%_]/g, '\\$&')).limit(1).maybeSingle();
+        if (!same) {
+          const { count } = await db.from('shop_alerts').select('id', { count: 'exact', head: true }).eq('email', email).eq('active', true);
+          if ((count ?? 0) >= 25) return json(req, { error: 'That email already has 25 alerts. Stop one first from the “Manage alerts” link in any alert email.' }, 400);
+        }
+        // A plain "notify me" (no filter fields sent) keeps any filters the alert already has.
+        const row = { email, term, active: true, updated_at: new Date().toISOString(), ...filters };
+        const { data: a, error } = same
+          ? await db.from('shop_alerts').update(row).eq('id', same.id).select('token, ' + ALERT_COLS).single()
+          : await db.from('shop_alerts').insert(row).select('token, ' + ALERT_COLS).single();
         if (error) throw error;
         if (vid) await db.from('shop_events').insert({ vid, type: 'alert', path: '/cards/', device: device(req.headers.get('user-agent') ?? '') });
+        // One confirmation per email and Pokémon, ever, so this can't be used to spam someone.
         const { data: first } = await db.from('shop_email_log').upsert({ kind: 'welcome', key: `alert:${term.toLowerCase()}`, email }, { onConflict: 'kind,key,email', ignoreDuplicates: true }).select('kind');
-        if (first?.length) await mail.alertConfirm(email, a.token, a.term).catch((e) => console.error('alert confirm', e));
+        if (first?.length) await mail.alertConfirm(email, (a as any).token, a as any).catch((e) => console.error('alert confirm', e));
+        return json(req, { ok: true, updated: !!same, alert: viaLink ? alertOut(a as any) : undefined });
+      }
+
+      case 'alert-update': {
+        const email = await tokenEmail(b.u);
+        if (!email) return json(req, { error: 'This link isn’t valid. Ask for a new one below.' }, 403);
+        if (typeof b.id !== 'string' || !UUID.test(b.id)) return json(req, { error: 'Bad alert' }, 400);
+        let filters;
+        try { filters = alertFilters(b); } catch (e) { return json(req, { error: (e as Error).message }, 400); }
+        const patch: Record<string, unknown> = { ...filters, updated_at: new Date().toISOString() };
+        if (typeof b.active === 'boolean') {
+          if (b.active) {
+            const { count } = await db.from('shop_alerts').select('id', { count: 'exact', head: true }).eq('email', email).eq('active', true).neq('id', b.id);
+            if ((count ?? 0) >= 25) return json(req, { error: 'You already have 25 alerts on. Stop one first.' }, 400);
+          }
+          patch.active = b.active;
+        }
+        const { data: a, error } = await db.from('shop_alerts').update(patch).eq('id', b.id).eq('email', email).select(ALERT_COLS).maybeSingle();
+        if (error) throw error;
+        if (!a) return json(req, { error: 'That alert is gone. Refresh the page.' }, 404);
+        return json(req, { ok: true, alert: alertOut(a) });
+      }
+
+      case 'alerts-link': {
+        if (b.website) return json(req, { ok: true });
+        const email = str(b.email, 254)?.toLowerCase();
+        if (!email || !EMAIL.test(email)) return json(req, { error: 'That email doesn’t look right.' }, 400);
+        // Always the same answer, so this can't be used to find out who has alerts.
+        const { data: a } = await db.from('shop_alerts').select('token').eq('email', email).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (a) {
+          const slot = Math.floor(Date.now() / (15 * 60e3)); // at most one link per 15 minutes
+          const { data: first } = await db.from('shop_email_log').upsert({ kind: 'manage', key: String(slot), email }, { onConflict: 'kind,key,email', ignoreDuplicates: true }).select('kind');
+          if (first?.length) await mail.manageAlerts(email, a.token).catch((e) => console.error('manage link', e));
+        }
         return json(req, { ok: true });
       }
 

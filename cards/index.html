@@ -32,6 +32,7 @@
     .topbar-inner { max-width: 1180px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
     .back, .merch-link { color: var(--muted); text-decoration: none; font-size: 0.85rem; font-weight: 500; white-space: nowrap; }
     .back:hover, .merch-link:hover { color: var(--text); }
+    @media (max-width: 420px) { .merch-link .lbl { display: none; } }
     .brand { flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none; }
     .brand img { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; box-shadow: 0 0 0 2px rgba(220,30,40,0.7); }
     .brand span { font-family: 'Bebas Neue', sans-serif; font-size: 1.45rem; letter-spacing: 2px; }
@@ -248,6 +249,7 @@
     .notify .msg { font-size: 0.8rem; }
     .notify .msg:empty { display: none; }
     .notify .msg.ok { color: var(--accent3); } .notify .msg.bad { color: #ff8fa3; }
+    .notify .more { font-size: 0.8rem; color: var(--accent2); }
     .notify .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
     .state .notify { margin-top: 18px; text-align: left; }
     @media (max-width: 420px) { .notify .row.two { flex-direction: column; } }
@@ -283,6 +285,7 @@
   <div class="topbar-inner">
     <a class="back" href="../">&#8249; Links</a>
     <a class="brand" href="./"><img src="../logo.jpg" alt=""><span>DaBirddy Cards</span></a>
+    <a class="merch-link" href="alerts.html" title="Get an email when the Pokémon you collect are listed" aria-label="Card alerts">🔔<span class="lbl"> Alerts</span></a>
     <a class="merch-link" href="../shop/">Merch</a>
     <button class="cart-btn" id="cartBtn" aria-label="Open cart">
       <svg class="i" viewBox="0 0 24 24"><path d="M6 7h15l-1.5 8h-12L6 4H3"/><circle cx="9" cy="19.5" r="1.2"/><circle cx="17" cy="19.5" r="1.2"/></svg>
@@ -386,6 +389,7 @@
       <div class="row two"><input id="nEmail" type="email" autocomplete="email" placeholder="you@email.com" aria-label="Email address"><button type="submit" class="btn" id="nBtn">Notify me</button></div>
       <input class="hp" id="nHp" tabindex="-1" autocomplete="off" aria-hidden="true">
       <span class="msg" id="nMsg" role="status"></span>
+      <a class="more" id="nMore" href="alerts.html">Only graded, sealed or under a price? Customize this alert</a>
     </form>
     <section class="related" id="related" hidden><h3 id="relTitle"></h3><div class="rgrid" id="relGrid"></div></section>
   </div>
@@ -1133,12 +1137,13 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     $('nEmail').value = $('nEmail').value || myEmail();
     $('nMsg').textContent = ''; $('nMsg').className = 'msg';
     $('nBtn').disabled = false;
+    $('nMore').href = 'alerts.html?term=' + encodeURIComponent(nm) + (c.category === 'graded' || c.category === 'sealed' ? '&cat=' + c.category : '');
   }
   function notifyHtml(key, term, text) {
     return '<form class="notify" data-notify="' + key + '" novalidate><span>' + text + '</span>' +
       '<input type="hidden" value="' + esc(term) + '" data-term>' +
       '<div class="row two"><input type="email" autocomplete="email" placeholder="you@email.com" aria-label="Email address" value="' + esc(myEmail()) + '" data-email><button type="submit" class="btn">Notify me</button></div>' +
-      '<span class="msg" role="status"></span></form>';
+      '<span class="msg" role="status"></span><a class="more" href="alerts.html?term=' + encodeURIComponent(term) + '">More alert options</a></form>';
   }
   function sendAlert(term, email, btn, msg) {
     msg.className = 'msg';

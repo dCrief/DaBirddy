@@ -93,7 +93,7 @@
           '<div class="msg" id="footMsg" role="status"></div></div>' +
         '<nav aria-label="Shop info">' +
           '<a href="./">Shop all cards</a><a href="reviews.html">Customer reviews</a>' +
-          '<a href="order.html">Track your order</a><a href="policies.html#shipping">Shipping</a>' +
+          '<a href="alerts.html">Card alerts</a><a href="order.html">Track your order</a><a href="policies.html#shipping">Shipping</a>' +
           '<a href="policies.html#returns">Returns &amp; refunds</a><a href="policies.html#privacy">Privacy</a>' +
           '<a href="policies.html#contact">Contact us</a><a href="../">About DaBirddy</a>' +
         '</nav>' +
