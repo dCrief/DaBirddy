@@ -162,8 +162,8 @@ async function wishlistSale(sale: Awaited<ReturnType<typeof activeSale>>) {
 }
 
 // Late-shipping nudge for David and Arjun: paid website orders still not marked shipped
-// 48 hours after payment. One email per partner listing every order that just crossed
-// 48 hours. Each order is nudged once per partner (claimed in shop_email_log as "ship-late").
+// 48 hours after payment. One email per partner, listing the late orders plus any close
+// behind (36h+). Each order is nudged once per partner (claimed in shop_email_log as "ship-late").
 const LEDGER_APP = 'https://partner-ledger-rosy.vercel.app';
 type LateOrder = { id: string; order_number: string; buyer_name: string | null; paid_at: string; method: string; items: { title: string; qty: number }[] | null };
 
@@ -182,12 +182,12 @@ function lateMail(to: { name: string; email: string }, orders: LateOrder[]) {
 <div style="max-width:560px;margin:0 auto;padding:24px 16px"><div style="background:#fff;border-radius:14px;padding:28px 24px">
 <div style="font-size:24px;font-weight:800">DaBirddy</div>
 <h1 style="font-size:20px;margin:18px 0 8px">${n === 1 ? 'An order hasn’t shipped yet' : `${n} orders haven’t shipped yet`}</h1>
-<p style="margin:0 0 10px;color:#333;line-height:1.5">Hi ${mail.esc(to.name)}, ${n === 1 ? 'this website order was' : 'these website orders were'} paid more than 2 days ago and ${n === 1 ? 'is' : 'are'} still waiting in To ship.</p>
+<p style="margin:0 0 10px;color:#333;line-height:1.5">Hi ${mail.esc(to.name)}, ${n === 1 ? 'this website order is' : 'these website orders are'} still waiting in To ship.</p>
 <table style="width:100%;border-collapse:collapse;margin-top:12px">${rows}</table>
 <p style="margin:22px 0 0"><a href="${LEDGER_APP}" style="display:inline-block;background:#e11d48;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px">Open To ship</a></p>
 <p style="margin:18px 0 0;color:#666;font-size:13px;line-height:1.5">Already sent it? Tap Shipped on the order in the Shop tab so the buyer gets their tracking email. This reminder goes to David and Arjun only.</p>
 </div></div></body></html>`;
-  const text = `Hi ${to.name}, ${n === 1 ? 'this order was' : 'these orders were'} paid over 2 days ago and still ${n === 1 ? 'hasn\'t' : 'haven\'t'} been marked shipped:\n` +
+  const text = `Hi ${to.name}, ${n === 1 ? 'this order is' : 'these orders are'} still waiting to be marked shipped:\n` +
     orders.map((o) => `- ${o.order_number} · ${o.buyer_name ?? 'Buyer'} · ${what(o)} · waiting ${waited(o)}`).join('\n') +
     `\n\nOpen To ship: ${LEDGER_APP}\nAlready sent it? Tap Shipped so the buyer gets their tracking email.`;
   return mail.send(to.email, n === 1 ? `Reminder: order ${orders[0].order_number} still needs to ship` : `Reminder: ${n} orders still need to ship`, html, text);
@@ -195,11 +195,16 @@ function lateMail(to: { name: string; email: string }, orders: LateOrder[]) {
 
 async function shipReminders() {
   const { data: late } = await db.from('shop_orders').select('id, order_number, buyer_name, paid_at, method, items')
-    .eq('status', 'paid').not('paid_at', 'is', null).lte('paid_at', ago(48 * HOUR)).order('paid_at').limit(50);
+    .eq('status', 'paid').not('paid_at', 'is', null).lte('paid_at', ago(36 * HOUR)).order('paid_at').limit(50);
   if (!late?.length) return;
   const { data: partners } = await db.from('partners').select('name, email').not('email', 'is', null);
   for (const p of partners ?? []) {
     if (!p.email?.includes('@')) continue;
+    // Only when an order has crossed 48 hours; orders close behind (36h+) ride along in the
+    // same email so a batch of orders paid close together doesn't mean a run of emails.
+    const { data: done } = await db.from('shop_email_log').select('key').eq('kind', 'ship-late').eq('email', p.email).in('key', late.map((o) => o.id));
+    const seen = new Set((done ?? []).map((d) => d.key));
+    if (!(late as LateOrder[]).some((o) => !seen.has(o.id) && Date.now() - new Date(o.paid_at).getTime() >= 48 * HOUR)) continue;
     const mine: LateOrder[] = [];
     for (const o of late as LateOrder[]) if (await claim('ship-late', o.id, p.email)) mine.push(o);
     if (!mine.length) continue;
