@@ -10,6 +10,8 @@
  *   4. "Notify me" alerts — new cards matching a saved alert (words, plus optional kind of
  *      listing and top price after any sale), each card once per email.
  *   5. Wishlist sale — once per sale per subscriber, when their saved cards are in it.
+ *   6. Late-shipping reminder to the partners (not customers) — paid orders not marked
+ *      shipped 48 hours after payment, once per order per partner.
  *
  * Every send is claimed first (a shop_email_log row or an order timestamp), so a slow or
  * overlapping run never emails anyone twice. Deploy with --no-verify-jwt.
@@ -159,6 +161,52 @@ async function wishlistSale(sale: Awaited<ReturnType<typeof activeSale>>) {
   }
 }
 
+// Late-shipping nudge for David and Arjun: paid website orders still not marked shipped
+// 48 hours after payment. One email per partner listing every order that just crossed
+// 48 hours. Each order is nudged once per partner (claimed in shop_email_log as "ship-late").
+const LEDGER_APP = 'https://partner-ledger-rosy.vercel.app';
+type LateOrder = { id: string; order_number: string; buyer_name: string | null; paid_at: string; method: string; items: { title: string; qty: number }[] | null };
+
+function lateMail(to: { name: string; email: string }, orders: LateOrder[]) {
+  const n = orders.length;
+  const waited = (o: LateOrder) => {
+    const h = Math.floor((Date.now() - new Date(o.paid_at).getTime()) / HOUR);
+    return h < 72 ? `${h} hours` : `${Math.floor(h / 24)} days`;
+  };
+  const what = (o: LateOrder) => (o.items ?? []).map((it) => (it.qty > 1 ? `${it.qty} × ${it.title}` : it.title)).join(', ');
+  const rows = orders.map((o) =>
+    `<tr><td style="padding:8px 10px 8px 0;border-bottom:1px solid #eee;vertical-align:top"><b>${mail.esc(o.order_number)}</b><br><span style="color:#666;font-size:13px">${mail.esc(o.buyer_name ?? 'Buyer')} · ${o.method === 'envelope' ? 'Envelope' : 'Package'}</span></td>` +
+    `<td style="padding:8px 0;border-bottom:1px solid #eee;vertical-align:top;color:#333">${mail.esc(what(o))}</td>` +
+    `<td style="padding:8px 0 8px 10px;border-bottom:1px solid #eee;vertical-align:top;text-align:right;white-space:nowrap;color:#b91c1c">${waited(o)}</td></tr>`).join('');
+  const html = `<!doctype html><html><body style="margin:0;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111">
+<div style="max-width:560px;margin:0 auto;padding:24px 16px"><div style="background:#fff;border-radius:14px;padding:28px 24px">
+<div style="font-size:24px;font-weight:800">DaBirddy</div>
+<h1 style="font-size:20px;margin:18px 0 8px">${n === 1 ? 'An order hasn’t shipped yet' : `${n} orders haven’t shipped yet`}</h1>
+<p style="margin:0 0 10px;color:#333;line-height:1.5">Hi ${mail.esc(to.name)}, ${n === 1 ? 'this website order was' : 'these website orders were'} paid more than 2 days ago and ${n === 1 ? 'is' : 'are'} still waiting in To ship.</p>
+<table style="width:100%;border-collapse:collapse;margin-top:12px">${rows}</table>
+<p style="margin:22px 0 0"><a href="${LEDGER_APP}" style="display:inline-block;background:#e11d48;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px">Open To ship</a></p>
+<p style="margin:18px 0 0;color:#666;font-size:13px;line-height:1.5">Already sent it? Tap Shipped on the order in the Shop tab so the buyer gets their tracking email. This reminder goes to David and Arjun only.</p>
+</div></div></body></html>`;
+  const text = `Hi ${to.name}, ${n === 1 ? 'this order was' : 'these orders were'} paid over 2 days ago and still ${n === 1 ? 'hasn\'t' : 'haven\'t'} been marked shipped:\n` +
+    orders.map((o) => `- ${o.order_number} · ${o.buyer_name ?? 'Buyer'} · ${what(o)} · waiting ${waited(o)}`).join('\n') +
+    `\n\nOpen To ship: ${LEDGER_APP}\nAlready sent it? Tap Shipped so the buyer gets their tracking email.`;
+  return mail.send(to.email, n === 1 ? `Reminder: order ${orders[0].order_number} still needs to ship` : `Reminder: ${n} orders still need to ship`, html, text);
+}
+
+async function shipReminders() {
+  const { data: late } = await db.from('shop_orders').select('id, order_number, buyer_name, paid_at, method, items')
+    .eq('status', 'paid').not('paid_at', 'is', null).lte('paid_at', ago(48 * HOUR)).order('paid_at').limit(50);
+  if (!late?.length) return;
+  const { data: partners } = await db.from('partners').select('name, email').not('email', 'is', null);
+  for (const p of partners ?? []) {
+    if (!p.email?.includes('@')) continue;
+    const mine: LateOrder[] = [];
+    for (const o of late as LateOrder[]) if (await claim('ship-late', o.id, p.email)) mine.push(o);
+    if (!mine.length) continue;
+    if (!(await sendOne(() => lateMail(p, mine)))) for (const o of mine) await unclaim('ship-late', o.id, p.email);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
   const { data: ok } = await db.rpc('shop_sync_token_ok', { p_token: req.headers.get('x-hub-token') ?? '' });
@@ -168,6 +216,7 @@ Deno.serve(async (req) => {
   sends = 0;
   const sale = await activeSale(0).catch(() => null);
   const steps: [string, () => Promise<void>][] = [
+    ['ship-late', shipReminders],
     ['shipped', shippedEmails],
     ['reviews', reviewRequests],
     ['carts', () => abandonedCarts(sale)],
