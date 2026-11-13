@@ -5,12 +5,15 @@
  * (the payout partner, whose TCG Tracking and Shippo accounts are billed).
  *
  * Body: { method: 'envelope'|'package', ship_to: { name, line1, line2?, city, state, postal_code },
- *         description?, value_cents?, partner_id, owner_id?, force? }
+ *         description?, value_cents?, partner_id, owner_id?, force?, entry_id? }
  *   or { action: 'verify', ship_to } -> { valid, address, messages }: the USPS-standard address.
  *   or { action: 'templates' } -> { templates, default_id }: the Shippo parcel templates for packages.
  * template_id (packages) picks one of those; otherwise the default.
  * Buying re-checks the address and ships to the standard form; an address USPS
  * can't find is refused (needs_confirm) unless force is true.
+ * entry_id is the ledger entry (the sale) the label belongs to; the ledger shows the
+ * label on that entry. Every label PDF is kept in the shop-labels bucket (Shippo's
+ * own links expire), so it can be opened from the entry for good.
  * Partners only (signed-in ledger user).
  */
 
@@ -25,6 +28,23 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 const str = (v: unknown, max = 100) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Copy a label PDF from the carrier's link into the shop-labels bucket; its path, or null. */
+async function keepPdf(url: string, path: string): Promise<string | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`download ${r.status}`);
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    const { error } = await db.storage.from('shop-labels').upload(path, bytes, { contentType: 'application/pdf', upsert: true });
+    if (error) throw error;
+    return path;
+  } catch (err) {
+    // label-archive retries it later.
+    console.error('keep label pdf', path, err);
+    return null;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -78,6 +98,7 @@ Deno.serve(async (req) => {
   const owner_id = ids.has(b.owner_id) ? b.owner_id : null;
   const description = str(b.description, 120) || null;
   const value_cents = Number.isInteger(b.value_cents) && b.value_cents > 0 ? Math.min(b.value_cents, 9_999_999) : null;
+  const entry_id = typeof b.entry_id === 'string' && UUID.test(b.entry_id) ? b.entry_id : null;
 
   // Ship to the USPS-standard form of the address; stop if USPS can't find it.
   try {
@@ -91,7 +112,7 @@ Deno.serve(async (req) => {
   }
 
   const { data: row, error: ie } = await db.from('shipping_labels')
-    .insert({ method, ship_to, description, value_cents, partner_id: b.partner_id, owner_id, created_by: me.id })
+    .insert({ method, ship_to, description, value_cents, partner_id: b.partner_id, owner_id, entry_id, created_by: me.id })
     .select('id, ref').single();
   if (ie) return json({ error: ie.message }, 500);
 
@@ -140,9 +161,12 @@ Deno.serve(async (req) => {
       expense_entry_id = e?.id ?? null;
     }
 
+    // Keep our own copy of the PDF: Shippo's link stops working after a while.
+    const label_path = label.label_path ?? (label.label_url ? await keepPdf(label.label_url, `${row.ref}.pdf`) : null);
+
     await db.from('shipping_labels').update({
       tracking_number: label.tracking_number,
-      label_path: label.label_path ?? null,
+      label_path,
       label_url: label.label_url ?? null,
       cost_cents: cost,
       expense_entry_id,
@@ -150,9 +174,9 @@ Deno.serve(async (req) => {
     }).eq('id', row.id);
 
     let pdf = label.label_url ?? null;
-    if (!pdf && label.label_path) {
-      const { data: signed } = await db.storage.from('shop-labels').createSignedUrl(label.label_path, 3600);
-      pdf = signed?.signedUrl ?? null;
+    if (label_path) {
+      const { data: signed } = await db.storage.from('shop-labels').createSignedUrl(label_path, 3600);
+      pdf = signed?.signedUrl ?? pdf;
     }
     return json({ ok: true, id: row.id, ref: row.ref, tracking_number: label.tracking_number, cost_cents: cost, pdf, logged: !!expense_entry_id, ship_to });
   } catch (err) {
