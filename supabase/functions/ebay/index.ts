@@ -242,13 +242,52 @@ function ebayTitle(l: Listing): string {
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
-function ebayDescription(l: Listing): string {
+// What each condition means, shown in the description.
+const CONDITION_NOTE: Record<string, string> = {
+  nm: 'Clean card with little to no wear.',
+  ex: 'Light edge or corner wear and minor surface scuffs. No major flaws.',
+  vg: 'Noticeable edge and corner wear, scuffs or light creasing.',
+  poor: 'Heavy wear, creases or other major flaws.',
+};
+
+/**
+ * The listing description: DaBirddy header, the card's details and condition, packaging, handling,
+ * returns, and a link to the rest of our eBay listings. No outside links or web addresses (eBay rule).
+ */
+function ebayDescription(l: Listing, seller?: string | null): string {
+  const cond = CONDITION[l.ebay_condition ?? ''];
+  const rows = [['Card', l.title], ['Set', l.set_name], ['Number', l.card_number], ['Printing', l.variant], ['Condition', cond?.label]]
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<li><b>${k}:</b> ${esc(v!)}</li>`)
+    .join('');
+  const note = l.ebay_condition && CONDITION_NOTE[l.ebay_condition] ? `<p><b>${esc(cond!.label)}:</b> ${CONDITION_NOTE[l.ebay_condition]}</p>` : '';
+  const extra = l.description ? `<p>${esc(l.description).replace(/\n/g, '<br>')}</p>` : '';
+  const more = seller
+    ? `<p><a href="https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(seller)}">See our other cards on eBay</a>. New cards added every week.</p>`
+    : '<p>See our other listings. New cards added every week.</p>';
+  const h3 = 'style="margin:18px 0 6px;font-size:16px"';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222;max-width:800px">`
+    + `<p style="margin:0 0 4px;font-size:13px;letter-spacing:2px;color:#e8455f"><b>DABIRDDY GAMING</b></p>`
+    + `<p style="margin:0 0 12px;color:#555">Pokémon singles from a card show vendor. Every card photographed, packed with care.</p>`
+    + `<h2 style="margin:0 0 8px">${esc(l.title)}</h2><ul>${rows}</ul>${note}${extra}`
+    + `<p><b>The photos are of the exact card you will receive.</b></p>`
+    + `<h3 ${h3}>Shipping &amp; packaging</h3><ul>`
+    + `<li><b>Tracked envelope:</b> card in a sleeve, inside a semi-rigid card holder.</li>`
+    + `<li><b>Ground Advantage:</b> card in a sleeve and toploader, reinforced with extra toploaders, sealed in a team bag, inside a bubble mailer.</li>`
+    + `<li>Ships within 2 business days.</li>`
+    + `<li>Buying more than one card? Ask us about combined shipping.</li></ul>`
+    + `<h3 ${h3}>Returns</h3><p>30-day returns. Cards must come back in the same condition and packaging they were sent in.</p>`
+    + `<h3 ${h3}>More from DaBirddy</h3>${more}`
+    + `<p style="color:#555">Thanks for supporting a small shop!</p></div>`;
+}
+
+/** Plain version for the inventory item (eBay caps it at 4000 characters; the listing shows the full one above). */
+function itemDescription(l: Listing): string {
   const rows = [['Card', l.title], ['Set', l.set_name], ['Number', l.card_number], ['Printing', l.variant], ['Condition', CONDITION[l.ebay_condition ?? '']?.label]]
     .filter(([, v]) => v)
     .map(([k, v]) => `<li><b>${k}:</b> ${esc(v!)}</li>`)
     .join('');
-  const extra = l.description ? `<p>${esc(l.description).replace(/\n/g, '<br>')}</p>` : '';
-  return `<h2>${esc(l.title)}</h2><ul>${rows}</ul>${extra}<p>Photos are of the actual card you will receive.</p>`;
+  return `<h2>${esc(l.title)}</h2><ul>${rows}</ul><p>Photos are of the actual card you will receive.</p>`.slice(0, 4000);
 }
 
 /** Envelope or package: the listing's own choice, else the shop's rule for a single item. */
@@ -271,7 +310,7 @@ function blocker(l: Listing, a: Account): string | null {
 const photosOf = (l: Listing) => (l.photos ?? []).filter((p) => /\.jpe?g$/i.test(p) && !/_(m|p|t)\.jpg$/i.test(p)).slice(0, 24).map((p) => PHOTO_BASE + p);
 // The DaBirddy banner (logo, site, socials) goes last on every eBay listing. It's served from
 // dabirddy.com; bump the ?v= when the image changes so eBay fetches the new one.
-const EBAY_BANNER = 'https://dabirddy.com/ebay-banner.jpg?v=2';
+const EBAY_BANNER = 'https://dabirddy.com/ebay-banner.jpg?v=3';
 const ebayImages = (l: Listing) => [...photosOf(l).slice(0, 23), EBAY_BANNER];
 
 type Offer = { offerId: string; status: string; listing?: { listingId?: string } };
@@ -327,7 +366,7 @@ async function syncListing(id: string, a?: Account): Promise<{ ok: boolean; stat
       availability: { shipToLocationAvailability: { quantity: l.quantity } },
       condition: 'USED_VERY_GOOD', // eBay's code for "Ungraded" in trading card categories
       conditionDescriptors: [{ name: '40001', values: [cond.id] }],
-      product: { title: ebayTitle(l), description: ebayDescription(l), aspects, imageUrls: ebayImages(l) },
+      product: { title: ebayTitle(l), description: itemDescription(l), aspects, imageUrls: ebayImages(l) },
     });
 
     const price = Math.round(l.price * (100 + Number(a.markup_percent || 0))) / 100;
@@ -337,7 +376,7 @@ async function syncListing(id: string, a?: Account): Promise<{ ok: boolean; stat
       format: 'FIXED_PRICE',
       availableQuantity: l.quantity,
       categoryId: CATEGORY_SINGLES,
-      listingDescription: ebayDescription(l),
+      listingDescription: ebayDescription(l, a.ebay_user),
       listingDuration: 'GTC',
       merchantLocationKey: location,
       pricingSummary: { price: { value: price.toFixed(2), currency: 'USD' } },
