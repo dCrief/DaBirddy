@@ -43,12 +43,13 @@ const SCOPES = [
 ].join(' ');
 const MARKETPLACE = 'EBAY_US';
 const CATEGORY_SINGLES = '183454'; // Collectible Card Games > CCG Individual Cards
-// Ungraded card condition (condition descriptor 40001).
+// Ungraded card condition (condition descriptor 40001). CCG singles (183454) take the "played" ids;
+// 400011-400013 are only valid in the sports/non-sport card categories.
 const CONDITION: Record<string, { id: string; label: string }> = {
   nm: { id: '400010', label: 'Near Mint or Better' },
-  ex: { id: '400011', label: 'Excellent' },
-  vg: { id: '400012', label: 'Very Good' },
-  poor: { id: '400013', label: 'Poor' },
+  ex: { id: '400015', label: 'Lightly Played (Excellent)' },
+  vg: { id: '400016', label: 'Moderately Played (Very Good)' },
+  poor: { id: '400017', label: 'Heavily Played (Poor)' },
 };
 
 const cors = {
