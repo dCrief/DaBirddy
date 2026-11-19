@@ -7,6 +7,8 @@
  * here; selling out, taking it off the site or turning eBay off ends the eBay listing. Every 5
  * minutes pg_cron posts { action: 'tick' }: dirty listings are retried and new eBay orders are pulled
  * in, taking the cards off the shop and logging the sale in the ledger for the payout partner.
+ * Each order keeps the buyer's ship-to address and ship-by date for the ledger's "Sold on eBay" list
+ * (Shop tab), and the tick re-checks unshipped orders so one shipped on eBay itself shows as shipped.
  * The tick also pulls open Best Offers into shop_offers (source 'ebay') and buyer messages into
  * ebay_messages; answering either in the ledger fires a database trigger that posts
  * { action: 'offer_respond' | 'message_reply', id } here to send it to eBay (Trading API).
@@ -391,12 +393,76 @@ type EbayOrder = {
   creationDate: string;
   buyer?: { username?: string };
   cancelStatus?: { cancelState?: string };
-  pricingSummary?: { total?: { value: string } };
   totalMarketplaceFee?: { value: string };
-  lineItems: { sku?: string; title: string; quantity: number; lineItemCost?: { value: string } }[];
+  orderFulfillmentStatus?: string; // NOT_STARTED | IN_PROGRESS | FULFILLED
+  pricingSummary?: { total?: { value: string }; priceSubtotal?: { value: string }; deliveryCost?: { value: string } } & Record<string, unknown>;
+  lineItems: {
+    sku?: string;
+    title: string;
+    quantity: number;
+    lineItemCost?: { value: string };
+    properties?: { fromBestOffer?: boolean };
+    lineItemFulfillmentInstructions?: { shipByDate?: string };
+  }[];
+  fulfillmentStartInstructions?: {
+    shippingStep?: {
+      shipTo?: {
+        fullName?: string;
+        contactAddress?: { addressLine1?: string; addressLine2?: string; city?: string; stateOrProvince?: string; postalCode?: string; countryCode?: string };
+      };
+    };
+  }[];
 };
 
 const cents = (v?: { value: string }) => (v ? Math.round(Number(v.value) * 100) : 0);
+
+/** Where to send it, the ship-by date, what the buyer paid for the cards vs. shipping, and eBay's shipping status. */
+function shipInfo(o: EbayOrder) {
+  const t = o.fulfillmentStartInstructions?.[0]?.shippingStep?.shipTo;
+  const a = t?.contactAddress;
+  const ship_to = a?.addressLine1
+    ? {
+      name: t?.fullName ?? '',
+      line1: a.addressLine1,
+      line2: a.addressLine2 || null,
+      city: a.city ?? '',
+      state: a.stateOrProvince ?? '',
+      postal_code: a.postalCode ?? '',
+      country: a.countryCode ?? 'US',
+    }
+    : null;
+  const byDates = o.lineItems.map((li) => li.lineItemFulfillmentInstructions?.shipByDate).filter(Boolean).sort() as string[];
+  return {
+    ship_to,
+    ship_by: byDates[0] ?? null,
+    items_cents: o.pricingSummary?.priceSubtotal ? cents(o.pricingSummary.priceSubtotal) : o.lineItems.reduce((n, li) => n + cents(li.lineItemCost), 0),
+    shipping_cents: cents(o.pricingSummary?.deliveryCost),
+    ebay_status: o.cancelStatus?.cancelState === 'CANCELED' ? 'CANCELED' : o.orderFulfillmentStatus ?? null,
+  };
+}
+
+/**
+ * Unshipped eBay orders from the last 45 days: fill in the address if it's missing, and take up
+ * eBay's status (an order shipped or cancelled on eBay itself shows that way in the ledger).
+ */
+async function refreshOrders() {
+  const since = new Date(Date.now() - 45 * 86400_000).toISOString();
+  const { data: open } = await db.from('ebay_orders').select('order_id, ship_to, ebay_status')
+    .is('shipped_at', null).gte('ordered_at', since).order('ordered_at').limit(25);
+  let changed = 0;
+  for (const row of open ?? []) {
+    if (row.ebay_status === 'CANCELED') continue;
+    const o = (await ebay('GET', `/sell/fulfillment/v1/order/${encodeURIComponent(row.order_id)}`, undefined, [404])) as EbayOrder | null;
+    if (!o?.orderId) continue;
+    const info = shipInfo(o);
+    const fields: Record<string, unknown> = { ebay_status: info.ebay_status, ship_by: info.ship_by, items_cents: info.items_cents, shipping_cents: info.shipping_cents };
+    if (!row.ship_to && info.ship_to) fields.ship_to = info.ship_to;
+    if (info.ebay_status === 'FULFILLED') fields.shipped_at = new Date().toISOString();
+    if (info.ebay_status !== row.ebay_status || fields.ship_to || fields.shipped_at) changed++;
+    await db.from('ebay_orders').update(fields).eq('order_id', row.order_id);
+  }
+  return changed;
+}
 
 async function pullOrders(a: Account) {
   const since = new Date(Math.min(Date.now() - 3600_000, a.orders_checked_at ? Date.parse(a.orders_checked_at) - 3600_000 : Date.now() - 2 * 86400_000));
@@ -416,6 +482,7 @@ async function takeOrder(o: EbayOrder) {
   const total = cents(o.pricingSummary?.total), fee = cents(o.totalMarketplaceFee);
   const { error: ce } = await db.from('ebay_orders').insert({
     order_id: o.orderId, ordered_at: o.creationDate, buyer: o.buyer?.username ?? null, total_cents: total, fee_cents: fee, items: o.lineItems,
+    ...shipInfo(o),
   });
   if (ce) return; // already taken
 
@@ -438,6 +505,11 @@ async function takeOrder(o: EbayOrder) {
   const groups = new Map<string, Taken[]>();
   for (const t of taken) groups.set(t.owner_id ?? 'shared', [...(groups.get(t.owner_id ?? 'shared') ?? []), t]);
   const sub = taken.reduce((n, t) => n + t.line, 0) || 1;
+  const info = shipInfo(o);
+  const offer = o.lineItems.some((li) => li.properties?.fromBestOffer) ? ' (accepted offer)' : '';
+  const paid = info.shipping_cents
+    ? `cards $${(info.items_cents / 100).toFixed(2)}${offer} + shipping $${(info.shipping_cents / 100).toFixed(2)} = $${(total / 100).toFixed(2)}`
+    : `$${(total / 100).toFixed(2)}${offer}`;
   let leftTotal = total, leftFee = fee, firstId: string | null = null;
   const keys = [...groups.keys()];
   for (const [i, key] of keys.entries()) {
@@ -462,7 +534,7 @@ async function takeOrder(o: EbayOrder) {
       fee: f / 100,
       platform: 'eBay',
       description: desc.length > 200 ? desc.slice(0, 197) + '…' : desc,
-      note: `eBay order ${o.orderId}${o.buyer?.username ? ` · ${o.buyer.username}` : ''} · $${(t / 100).toFixed(2)} incl. shipping · eBay fee $${(f / 100).toFixed(2)}`,
+      note: `eBay order ${o.orderId}${o.buyer?.username ? ` · ${o.buyer.username}` : ''} · buyer paid ${paid}${keys.length > 1 ? ` (this part $${(t / 100).toFixed(2)})` : ''} · eBay fee $${(f / 100).toFixed(2)} · net $${net.toFixed(2)}`,
       source: 'import',
       photos: items.map((x) => x.photo).filter(Boolean),
       payments: [{ method: 'payout', amount: net }],
@@ -665,6 +737,12 @@ async function tick() {
     out.orders_error = String(err);
   }
   try {
+    out.orders_refreshed = await refreshOrders();
+  } catch (err) {
+    console.error('ebay order refresh', err);
+    out.refresh_error = String(err);
+  }
+  try {
     out.offers = await pullOffers(a);
   } catch (err) {
     console.error('ebay offers', err);
@@ -838,11 +916,11 @@ Deno.serve(async (req) => {
     return json({ error: 'Unknown action' }, 400);
   }
 
-  // eBay marketplace account deletion: we keep only buyer usernames on eBay orders.
+  // eBay marketplace account deletion: we keep buyer usernames and ship-to addresses on eBay orders.
   if (b?.metadata?.topic === 'MARKETPLACE_ACCOUNT_DELETION') {
     const username = b?.notification?.data?.username;
     if (username) {
-      await db.from('ebay_orders').update({ buyer: null }).eq('buyer', username);
+      await db.from('ebay_orders').update({ buyer: null, ship_to: null }).eq('buyer', username);
       await db.from('shop_offers').update({ buyer_name: 'eBay buyer', note: null }).eq('source', 'ebay').eq('buyer_name', username);
       await db.from('ebay_messages').delete().eq('sender', username);
     }
