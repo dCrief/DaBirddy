@@ -332,7 +332,7 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
       // The Rollo listener prints it now, or when someone taps Print in the ledger.
       ...(s.auto_print ? { print_requested_at: new Date().toISOString() } : {}),
     }).eq('id', o.id);
-    // Postage is the payout partner's (David's) cost, like the sale is his.
+    // David's accounts pay for the label; the cost goes to the cards' owners.
     if (cost && s.payout_partner_id) await logPostage(o, cost, s.payout_partner_id, label.carrier);
     return { ok: true };
   } catch (err) {
@@ -457,25 +457,47 @@ export async function syncSaleFee(orderId: string): Promise<boolean> {
   return changed;
 }
 
-/** Whose postage it is: the owner when every card in the order is one partner's (they get the buyer's shipping too), else shared. */
-function postageOwner(o: Order): string | null {
-  const owners = new Set(o.items.map((it) => it.owner_id ?? null));
-  return owners.size === 1 ? [...owners][0] : null;
+/**
+ * Splits postage across the cards' owners by what each owner's cards sold for (shared cards together):
+ * a $5 card of David's and a $7 card of Arjun's put 5/12 of the label on David and 7/12 on Arjun.
+ */
+export function splitPostage(cents: number, parts: { owner: string | null; value: number }[]): { owner: string | null; cents: number; value: number }[] {
+  const groups = new Map<string | null, number>();
+  for (const p of parts) groups.set(p.owner, (groups.get(p.owner) ?? 0) + Math.max(0, p.value));
+  if (!groups.size) groups.set(null, 0);
+  const keys = [...groups.keys()];
+  const sum = [...groups.values()].reduce((n, v) => n + v, 0);
+  let left = cents;
+  return keys.map((owner, i) => {
+    const value = groups.get(owner)!;
+    const c = i === keys.length - 1 ? left : Math.round(sum ? (cents * value) / sum : cents / keys.length);
+    left -= c;
+    return { owner, cents: c, value };
+  }).filter((p) => p.cents !== 0);
 }
 
+const dollars = (c: number) => (c / 100).toFixed(2);
+
+/** David pays the label; the cost is split across the cards' owners (see splitPostage). One line per owner. */
 async function logPostage(o: Order, cents: number, partnerId: string, carrier: string) {
-  const { error } = await db.from('entries').insert({
-    occurred_on: today(),
-    kind: 'expense',
-    partner_id: partnerId,
-    amount: -cents / 100,
-    owner_id: postageOwner(o), // the cards' owner when they're all one partner's; otherwise shared (50/50)
-    platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
-    description: `Postage for website ${o.order_number}`,
-    note: `${o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`} · tracking on the order`,
-    source: 'import',
-    payments: [{ method: 'card', amount: cents / 100 }],
-    created_by: partnerId,
-  });
-  if (error) console.error('postage entry', o.order_number, error.message);
+  const parts = splitPostage(cents, o.items.map((it) => ({ owner: it.owner_id ?? null, value: it.price_cents * it.qty })));
+  const how = o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`;
+  for (const p of parts) {
+    const { error } = await db.from('entries').insert({
+      occurred_on: today(),
+      kind: 'expense',
+      partner_id: partnerId,
+      amount: -p.cents / 100,
+      owner_id: p.owner, // null = shared (50/50)
+      platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
+      description: `Postage for website ${o.order_number}`,
+      note: parts.length > 1
+        ? `${how} · $${dollars(cents)} label split by card price: this part $${dollars(p.cents)} for $${dollars(p.value)} of $${dollars(o.subtotal_cents)} in cards · tracking on the order`
+        : `${how} · tracking on the order`,
+      source: 'import',
+      payments: [{ method: 'card', amount: p.cents / 100 }],
+      created_by: partnerId,
+    });
+    if (error) console.error('postage entry', o.order_number, error.message);
+  }
 }
