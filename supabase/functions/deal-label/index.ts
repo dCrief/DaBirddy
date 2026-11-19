@@ -1,8 +1,8 @@
 /**
  * POST /deal-label — a shipping label for a deal logged in the ledger
  * (Whatnot, eBay, in person...), made with the shop's TCG Tracking (envelope)
- * or Shippo (package) account. The label cost is logged as David's own expense
- * (the payout partner, whose TCG Tracking and Shippo accounts are billed).
+ * or Shippo (package) account. David's accounts pay the label cost
+ * (the payout partner); it is charged to the cards' owners, split by sale price.
  *
  * Body: { method: 'envelope'|'package', ship_to: { name, line1, line2?, city, state, postal_code },
  *         description?, value_cents?, partner_id, owner_id?, force?, entry_id? }
@@ -18,7 +18,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { db, defaultTemplate, loadSettings, parcelTemplates, shippoLabel, tcgTrackingLabel, verifyAddress, type Order } from '../_shared/cards.ts';
+import { db, defaultTemplate, loadSettings, parcelTemplates, shippoLabel, splitPostage, tcgTrackingLabel, verifyAddress, type Order } from '../_shared/cards.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -44,6 +44,23 @@ async function keepPdf(url: string, path: string): Promise<string | null> {
     console.error('keep label pdf', path, err);
     return null;
   }
+}
+
+/**
+ * Whose cards the label ships, with what each sold for. An eBay order that mixes owners is logged as one
+ * sale line per owner, so every line of that order counts. Otherwise it's the owner picked on the deal.
+ */
+async function saleOwners(entryId: string | null, fallback: string | null): Promise<{ owner: string | null; value: number }[]> {
+  if (entryId) {
+    const { data: e } = await db.from('entries').select('description').eq('id', entryId).maybeSingle();
+    const ebay = e?.description?.match(/^eBay (\S+):/);
+    if (ebay) {
+      const { data: lines } = await db.from('entries').select('owner_id, amount, fee')
+        .eq('kind', 'sell').is('deleted_at', null).like('description', `eBay ${ebay[1]}:%`);
+      if (lines?.length) return lines.map((l) => ({ owner: l.owner_id, value: Math.round((Number(l.amount) + Number(l.fee ?? 0)) * 100) }));
+    }
+  }
+  return [{ owner: fallback, value: 0 }];
 }
 
 Deno.serve(async (req) => {
@@ -141,24 +158,31 @@ Deno.serve(async (req) => {
     const label = method === 'envelope' ? await tcgTrackingLabel(order) : await shippoLabel(order, s, typeof b.template_id === 'string' ? b.template_id : null);
     const cost = label.label_cost_cents ?? (method === 'envelope' ? s.envelope_cost_cents : 0);
 
-    // The label cost, under the deal's partner and split like the deal.
+    // David's accounts pay for the label; the cost goes to the cards' owners, split by sale price.
     let expense_entry_id: string | null = null;
     if (cost) {
-      const { data: e, error: ee } = await db.from('entries').insert({
-        occurred_on: today(),
-        kind: 'expense',
-        partner_id: s.payout_partner_id ?? b.partner_id, // David's accounts pay for labels
-        owner_id: s.payout_partner_id ?? b.partner_id, // and the postage is all his
-        amount: -cost / 100,
-        platform: method === 'envelope' ? 'TCG Tracking' : 'Shippo',
-        description: `Postage${description ? `: ${description}` : ''} (${ship_to.name})`.slice(0, 200),
-        note: `Label ${row.ref} · ${method === 'envelope' ? 'tracked envelope' : 'USPS package'} · tracking ${label.tracking_number}`,
-        source: 'import',
-        payments: [{ method: 'card', amount: cost / 100 }],
-        created_by: me.id,
-      }).select('id').single();
-      if (ee) console.error('postage entry', row.ref, ee.message);
-      expense_entry_id = e?.id ?? null;
+      const parts = splitPostage(cost, await saleOwners(entry_id, owner_id));
+      const base = `Label ${row.ref} · ${method === 'envelope' ? 'tracked envelope' : 'USPS package'} · tracking ${label.tracking_number}`;
+      const total = parts.reduce((n, p) => n + p.value, 0);
+      for (const p of parts) {
+        const { data: e, error: ee } = await db.from('entries').insert({
+          occurred_on: today(),
+          kind: 'expense',
+          partner_id: s.payout_partner_id ?? b.partner_id,
+          owner_id: p.owner, // null = shared (50/50)
+          amount: -p.cents / 100,
+          platform: method === 'envelope' ? 'TCG Tracking' : 'Shippo',
+          description: `Postage${description ? `: ${description}` : ''} (${ship_to.name})`.slice(0, 200),
+          note: parts.length > 1
+            ? `${base} · $${(cost / 100).toFixed(2)} label split by sale price: this part $${(p.cents / 100).toFixed(2)} for $${(p.value / 100).toFixed(2)} of $${(total / 100).toFixed(2)}`
+            : base,
+          source: 'import',
+          payments: [{ method: 'card', amount: p.cents / 100 }],
+          created_by: me.id,
+        }).select('id').single();
+        if (ee) console.error('postage entry', row.ref, ee.message);
+        expense_entry_id ??= e?.id ?? null;
+      }
     }
 
     // Keep our own copy of the PDF: Shippo's link stops working after a while.
