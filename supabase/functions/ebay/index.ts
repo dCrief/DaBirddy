@@ -271,7 +271,7 @@ function blocker(l: Listing, a: Account): string | null {
 const photosOf = (l: Listing) => (l.photos ?? []).filter((p) => /\.jpe?g$/i.test(p) && !/_(m|p|t)\.jpg$/i.test(p)).slice(0, 24).map((p) => PHOTO_BASE + p);
 // The DaBirddy banner (logo, site, socials) goes last on every eBay listing. It's served from
 // dabirddy.com; bump the ?v= when the image changes so eBay fetches the new one.
-const EBAY_BANNER = 'https://dabirddy.com/ebay-banner.jpg?v=1';
+const EBAY_BANNER = 'https://dabirddy.com/ebay-banner.jpg?v=2';
 const ebayImages = (l: Listing) => [...photosOf(l).slice(0, 23), EBAY_BANNER];
 
 type Offer = { offerId: string; status: string; listing?: { listingId?: string } };
