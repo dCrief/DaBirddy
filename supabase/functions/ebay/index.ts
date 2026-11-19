@@ -7,9 +7,12 @@
  * here; selling out, taking it off the site or turning eBay off ends the eBay listing. Every 5
  * minutes pg_cron posts { action: 'tick' }: dirty listings are retried and new eBay orders are pulled
  * in, taking the cards off the shop and logging the sale in the ledger for the payout partner.
+ * The tick also pulls open Best Offers into shop_offers (source 'ebay') and buyer messages into
+ * ebay_messages; answering either in the ledger fires a database trigger that posts
+ * { action: 'offer_respond' | 'message_reply', id } here to send it to eBay (Trading API).
  *
  * Callers:
- *   x-hub-token (vault shop_sync_token): { action: 'sync', id } | { action: 'tick' }
+ *   x-hub-token (vault shop_sync_token): { action: 'sync' | 'offer_respond' | 'message_reply', id } | { action: 'tick' }
  *   Signed-in partner (ledger):          { action: 'status' | 'connect' | 'settings' | 'list_all' | 'sync' | 'disconnect', ... }
  *   eBay, GET ?code=&state=              OAuth consent came back (the RuName's "auth accepted" URL)
  *   eBay, GET ?challenge_code=           marketplace account deletion endpoint check
@@ -21,6 +24,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { XMLParser } from 'npm:fast-xml-parser@4.5.0';
 import { db, loadSettings } from '../_shared/cards.ts';
 import { money, notifyLedger } from '../_shared/push.ts';
 
@@ -77,6 +81,7 @@ type Account = {
   list_by_default: boolean;
   default_condition: string;
   orders_checked_at: string | null;
+  messages_checked_at: string | null;
   connected_at: string | null;
 };
 
@@ -338,6 +343,7 @@ async function syncListing(id: string, a?: Account): Promise<{ ok: boolean; stat
         fulfillmentPolicyId: (await shipsIn(l)) === 'envelope' ? a.envelope_policy_id : a.package_policy_id,
         paymentPolicyId: a.payment_policy_id,
         returnPolicyId: a.return_policy_id,
+        bestOfferTerms: await bestOfferTerms(price),
       },
     };
 
@@ -468,6 +474,185 @@ async function takeOrder(o: EbayOrder) {
   if (firstId) await db.from('ebay_orders').update({ ledger_entry_id: firstId }).eq('order_id', o.orderId);
 }
 
+// ---- Best Offers and buyer messages (eBay's Trading API, which takes the same OAuth token) ----
+
+/** Best Offer follows the site's offer settings: on or off, and offers under the minimum are declined by eBay. */
+async function bestOfferTerms(price: number) {
+  const s = (await loadSettings().catch(() => null)) as { offers_enabled?: boolean; offer_min_percent?: number } | null;
+  if (!s?.offers_enabled) return { bestOfferEnabled: false };
+  const floor = Math.floor(price * (s.offer_min_percent ?? 50)) / 100;
+  return floor > 0 && floor < price
+    ? { bestOfferEnabled: true, autoDeclinePrice: { value: floor.toFixed(2), currency: 'USD' } }
+    : { bestOfferEnabled: true };
+}
+
+const xml = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  parseTagValue: false, // ids are longer than a JS number
+  isArray: (name) => ['ItemBestOffers', 'BestOffer', 'MemberMessageExchange', 'Errors'].includes(name),
+});
+const text = (v: unknown): string => (v == null ? '' : typeof v === 'object' ? String((v as Record<string, unknown>)['#text'] ?? '') : String(v));
+
+/** One Trading API call. Returns the parsed <CallResponse>; throws with eBay's message when it fails. */
+async function trading(call: string, inner: string): Promise<any> {
+  const r = await fetch(`${API}/ws/api.dll`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/xml',
+      'X-EBAY-API-CALL-NAME': call,
+      'X-EBAY-API-SITEID': '0',
+      'X-EBAY-API-COMPATIBILITY-LEVEL': '1271',
+      'X-EBAY-API-IAF-TOKEN': await accessToken(),
+    },
+    body: `<?xml version="1.0" encoding="utf-8"?><${call}Request xmlns="urn:ebay:apis:eBLBaseComponents"><ErrorLanguage>en_US</ErrorLanguage><WarningLevel>High</WarningLevel>${inner}</${call}Request>`,
+  });
+  const out = xml.parse(await r.text())?.[`${call}Response`];
+  if (!out) throw Object.assign(new Error(`eBay: ${call} failed (${r.status})`), { status: r.status });
+  if (out.Ack === 'Failure' || out.Ack === 'PartialFailure') {
+    const errs = (out.Errors ?? []) as { LongMessage?: string; ShortMessage?: string; SeverityCode?: string }[];
+    const msg = errs.filter((e) => e.SeverityCode !== 'Warning').map((e) => e.LongMessage || e.ShortMessage).join(' ');
+    throw Object.assign(new Error(`eBay: ${msg || call + ' failed'}`), { status: 400 });
+  }
+  return out;
+}
+
+/** Shop listing (and its eBay price) by eBay item number. */
+async function listingsByItem(itemIds: string[]) {
+  const m = new Map<string, { id: string; title: string; price: number }>();
+  if (!itemIds.length) return m;
+  const { data } = await db.from('shop_listings').select('id, title, price, ebay_listing_id').in('ebay_listing_id', itemIds);
+  for (const l of data ?? []) m.set(l.ebay_listing_id, l);
+  return m;
+}
+
+/** Open Best Offers into shop_offers (source 'ebay'), and close the ones eBay no longer has open. */
+async function pullOffers(a: Account) {
+  const r = await trading('GetBestOffers', '<BestOfferStatus>Active</BestOfferStatus><DetailLevel>ReturnAll</DetailLevel>');
+  const items = (r.ItemBestOffersArray?.ItemBestOffers ?? []) as any[];
+  const byItem = await listingsByItem(items.map((i) => text(i.Item?.ItemID)).filter(Boolean));
+  const markup = 1 + Number(a.markup_percent || 0) / 100;
+  const active: string[] = [];
+  let added = 0;
+  for (const it of items) {
+    const itemId = text(it.Item?.ItemID);
+    const l = byItem.get(itemId);
+    for (const o of (it.BestOfferArray?.BestOffer ?? []) as any[]) {
+      const offerId = text(o.BestOfferID);
+      if (!offerId) continue;
+      active.push(offerId);
+      if (!l) continue; // listed on eBay by hand, not from the shop
+      const amount = Math.round(Number(text(o.Price)) * 100);
+      const { data: row, error } = await db.from('shop_offers').insert({
+        source: 'ebay',
+        ebay_offer_id: offerId,
+        ebay_item_id: itemId,
+        listing_id: l.id,
+        amount_cents: amount,
+        list_cents: Math.round(l.price * markup * 100),
+        buyer_name: text(o.Buyer?.UserID) || 'eBay buyer',
+        note: text(o.BuyerMessage) || null,
+        created_at: o.CreatedTime ? text(o.CreatedTime) : undefined,
+      }).select('id').maybeSingle();
+      if (error || !row) continue; // already have it
+      added++;
+      notifyLedger('ebay', {
+        title: text(o.BestOfferCodeType) === 'BuyerCounterOffer' ? 'eBay counter offer' : 'New eBay offer',
+        body: `${money(amount)} on ${l.title} from ${text(o.Buyer?.UserID) || 'a buyer'}`,
+        tag: `ebay-offer-${offerId}`,
+      });
+    }
+  }
+  // Still "new" here but gone from eBay: the buyer withdrew it, it expired, or it was answered on eBay.
+  let q = db.from('shop_offers').update({ status: 'withdrawn' }).eq('source', 'ebay').eq('status', 'pending');
+  if (active.length) q = q.not('ebay_offer_id', 'in', `(${active.join(',')})`);
+  await q;
+  return added;
+}
+
+/** Answer an eBay offer the way it was answered in the ledger. On failure it goes back to new, with the reason. */
+async function respondOffer(id: string) {
+  const { data: o } = await db.from('shop_offers').select('*').eq('id', id).maybeSingle();
+  if (!o || o.source !== 'ebay' || !['accepted', 'countered', 'declined'].includes(o.status)) return { ok: false, error: 'Nothing to send' };
+  const action = o.status === 'accepted' ? 'Accept' : o.status === 'declined' ? 'Decline' : 'Counter';
+  const counter = action === 'Counter'
+    ? `<CounterOfferPrice currencyID="USD">${(o.counter_cents / 100).toFixed(2)}</CounterOfferPrice><CounterOfferQuantity>1</CounterOfferQuantity>`
+    : '';
+  try {
+    await trading('RespondToBestOffer', `<ItemID>${esc(o.ebay_item_id)}</ItemID><BestOfferID>${esc(o.ebay_offer_id)}</BestOfferID><Action>${action}</Action>${counter}`);
+    await db.from('shop_offers').update({ ebay_error: null }).eq('id', id);
+    return { ok: true };
+  } catch (err) {
+    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    console.error('ebay offer', id, msg);
+    await db.from('shop_offers').update({ status: 'pending', counter_cents: null, responded_at: null, expires_at: null, ebay_error: msg }).eq('id', id);
+    return { ok: false, error: msg };
+  }
+}
+
+/** Buyer messages (questions about items, and messages after a sale) into ebay_messages. */
+async function pullMessages(a: Account) {
+  const end = new Date();
+  const start = new Date(Math.min(end.getTime() - 3600_000, a.messages_checked_at ? Date.parse(a.messages_checked_at) - 3600_000 : end.getTime() - 7 * 86400_000));
+  const r = await trading(
+    'GetMemberMessages',
+    `<MailMessageType>All</MailMessageType><StartCreationTime>${start.toISOString()}</StartCreationTime><EndCreationTime>${end.toISOString()}</EndCreationTime><Pagination><EntriesPerPage>100</EntriesPerPage><PageNumber>1</PageNumber></Pagination>`,
+  );
+  const ex = (r.MemberMessage?.MemberMessageExchange ?? []) as any[];
+  const byItem = await listingsByItem(ex.map((e) => text(e.Item?.ItemID)).filter(Boolean));
+  let added = 0;
+  for (const e of ex) {
+    const q = e.Question ?? {};
+    const id = text(q.MessageID);
+    const sender = text(q.SenderID);
+    if (!id || !sender || sender === a.ebay_user) continue;
+    const itemId = text(e.Item?.ItemID) || null;
+    const l = itemId ? byItem.get(itemId) : undefined;
+    const { data: row, error } = await db.from('ebay_messages').insert({
+      id,
+      item_id: itemId,
+      listing_id: l?.id ?? null,
+      item_title: l?.title ?? (text(e.Item?.Title) || null),
+      sender,
+      subject: text(q.Subject) || null,
+      body: text(q.Body),
+      received_at: text(e.CreationDate) || new Date().toISOString(),
+      replied_at: text(e.MessageStatus) === 'Answered' ? new Date().toISOString() : null,
+    }).select('id').maybeSingle();
+    if (error || !row || text(e.MessageStatus) === 'Answered') continue;
+    added++;
+    const body = text(q.Body);
+    notifyLedger('ebay', {
+      title: `eBay message from ${sender}`,
+      body: (l ? `${l.title}: ` : '') + (body.length > 140 ? body.slice(0, 137) + '…' : body),
+      tag: `ebay-msg-${id}`,
+    });
+  }
+  await saveAccount({ messages_checked_at: end.toISOString() });
+  return added;
+}
+
+/** Send the reply written in the ledger. On failure the reply is cleared and the reason kept. */
+async function replyMessage(id: string) {
+  const { data: m } = await db.from('ebay_messages').select('*').eq('id', id).maybeSingle();
+  if (!m?.reply || m.replied_at) return { ok: false, error: 'Nothing to send' };
+  try {
+    await trading(
+      'AddMemberMessageRTQ',
+      (m.item_id ? `<ItemID>${esc(m.item_id)}</ItemID>` : '') +
+        `<MemberMessage><Body>${esc(m.reply.slice(0, 2000))}</Body><DisplayToPublic>false</DisplayToPublic><EmailCopyToSender>true</EmailCopyToSender>` +
+        `<ParentMessageID>${esc(m.id)}</ParentMessageID><RecipientID>${esc(m.sender)}</RecipientID></MemberMessage>`,
+    );
+    await db.from('ebay_messages').update({ replied_at: new Date().toISOString(), reply_error: null }).eq('id', id);
+    return { ok: true };
+  } catch (err) {
+    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    console.error('ebay reply', id, msg);
+    await db.from('ebay_messages').update({ reply: null, reply_error: msg }).eq('id', id);
+    return { ok: false, error: msg };
+  }
+}
+
 async function tick() {
   if (!configured()) return { skipped: 'not configured' };
   const a = await account();
@@ -478,6 +663,18 @@ async function tick() {
   } catch (err) {
     console.error('ebay orders', err);
     out.orders_error = String(err);
+  }
+  try {
+    out.offers = await pullOffers(a);
+  } catch (err) {
+    console.error('ebay offers', err);
+    out.offers_error = String(err);
+  }
+  try {
+    out.messages = await pullMessages(a);
+  } catch (err) {
+    console.error('ebay messages', err);
+    out.messages_error = String(err);
   }
   const { data: dirty } = await db.from('shop_listings').select('id').eq('ebay_dirty', true).order('updated_at').limit(40);
   let synced = 0;
@@ -636,13 +833,19 @@ Deno.serve(async (req) => {
     if (!configured()) return json({ skipped: 'not configured' });
     if (b.action === 'sync' && typeof b.id === 'string') return json(await syncListing(b.id));
     if (b.action === 'tick') return json(await tick());
+    if (b.action === 'offer_respond' && typeof b.id === 'string') return json(await respondOffer(b.id));
+    if (b.action === 'message_reply' && typeof b.id === 'string') return json(await replyMessage(b.id));
     return json({ error: 'Unknown action' }, 400);
   }
 
   // eBay marketplace account deletion: we keep only buyer usernames on eBay orders.
   if (b?.metadata?.topic === 'MARKETPLACE_ACCOUNT_DELETION') {
     const username = b?.notification?.data?.username;
-    if (username) await db.from('ebay_orders').update({ buyer: null }).eq('buyer', username);
+    if (username) {
+      await db.from('ebay_orders').update({ buyer: null }).eq('buyer', username);
+      await db.from('shop_offers').update({ buyer_name: 'eBay buyer', note: null }).eq('source', 'ebay').eq('buyer_name', username);
+      await db.from('ebay_messages').delete().eq('sender', username);
+    }
     return new Response(null, { status: 204 });
   }
 

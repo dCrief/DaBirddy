@@ -1,6 +1,6 @@
 /**
  * Phone notifications to the partners' ledger app (Web Push), for new website
- * orders and offers. Uses the same VAPID keys as the family hub
+ * orders and offers, and eBay offers and messages. Uses the same VAPID keys as the family hub
  * (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY secrets). Never throws: a notification
  * that can't be sent must not break an order or an offer.
  */
@@ -14,7 +14,7 @@ let ready = false;
 export type Note = { title: string; body: string; url?: string; tag?: string };
 
 /** Send to every device that wants this kind (or the given partner's devices). */
-export async function notifyLedger(kind: 'orders' | 'offers' | 'test', note: Note, partnerId?: string): Promise<number> {
+export async function notifyLedger(kind: 'orders' | 'offers' | 'ebay' | 'test', note: Note, partnerId?: string): Promise<number> {
   try {
     const pub = Deno.env.get('VAPID_PUBLIC_KEY'), priv = Deno.env.get('VAPID_PRIVATE_KEY');
     if (!pub || !priv) return 0;
