@@ -653,6 +653,10 @@ async function pullOffers(a: Account) {
       if (!offerId) continue;
       active.push(offerId);
       if (!l) continue; // listed on eBay by hand, not from the shop
+      // Our own counter comes back in this list too (waiting on the buyer): it is not an offer to answer.
+      if (text(o.BestOfferCodeType) === 'SellerCounterOffer') continue;
+      const st = text(o.Status);
+      if (st && !['Pending', 'Active'].includes(st)) continue;
       const amount = Math.round(Number(text(o.Price)) * 100);
       const { data: row, error } = await db.from('shop_offers').insert({
         source: 'ebay',
@@ -681,7 +685,11 @@ async function pullOffers(a: Account) {
   return added;
 }
 
-/** Answer an eBay offer the way it was answered in the ledger. On failure it goes back to new, with the reason. */
+/**
+ * Answer an eBay offer the way it was answered in the ledger. If eBay says the offer can no longer be
+ * answered (it ended, expired or was taken back, or a counter of ours is already out waiting on the
+ * buyer), it is closed as withdrawn. Any other failure puts it back to new, with the reason.
+ */
 async function respondOffer(id: string) {
   const { data: o } = await db.from('shop_offers').select('*').eq('id', id).maybeSingle();
   if (!o || o.source !== 'ebay' || !['accepted', 'countered', 'declined'].includes(o.status)) return { ok: false, error: 'Nothing to send' };
@@ -696,7 +704,12 @@ async function respondOffer(id: string) {
   } catch (err) {
     const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
     console.error('ebay offer', id, msg);
-    await db.from('shop_offers').update({ status: 'pending', counter_cents: null, responded_at: null, expires_at: null, ebay_error: msg }).eq('id', id);
+    const dead = /no longer available|has ended|ended already|expired|not active|wait for the buyer|already been (accepted|declined|countered)/i.test(msg);
+    await db.from('shop_offers').update(
+      dead
+        ? { status: 'withdrawn', ebay_error: msg }
+        : { status: 'pending', counter_cents: null, responded_at: null, expires_at: null, ebay_error: msg },
+    ).eq('id', id);
     return { ok: false, error: msg };
   }
 }
