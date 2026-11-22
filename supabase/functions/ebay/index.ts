@@ -11,10 +11,15 @@
  * (Shop tab), and the tick re-checks unshipped orders so one shipped on eBay itself shows as shipped.
  * The tick also pulls open Best Offers into shop_offers (source 'ebay') and buyer messages into
  * ebay_messages; answering either in the ledger fires a database trigger that posts
- * { action: 'offer_respond' | 'message_reply', id } here to send it to eBay (Trading API).
+ * { action: 'offer_respond' | 'message_reply', id } here to send it to eBay (Trading API). An offer
+ * answer carries the note typed with it (shop_offers.seller_message) as eBay's seller response.
+ * A label bought for an eBay sale (deal-label: TCG Tracking envelope or Shippo package) puts its
+ * tracking number on the order, and a trigger posts { action: 'fulfill', id: order_id } here to send
+ * the tracking number and carrier to eBay, which marks the order shipped there. The tick retries any
+ * that didn't go through.
  *
  * Callers:
- *   x-hub-token (vault shop_sync_token): { action: 'sync' | 'offer_respond' | 'message_reply', id } | { action: 'tick' }
+ *   x-hub-token (vault shop_sync_token): { action: 'sync' | 'offer_respond' | 'message_reply' | 'fulfill', id } | { action: 'tick' }
  *   Signed-in partner (ledger):          { action: 'status' | 'connect' | 'settings' | 'list_all' | 'sync' | 'disconnect', ... }
  *   eBay, GET ?code=&state=              OAuth consent came back (the RuName's "auth accepted" URL)
  *   eBay, GET ?challenge_code=           marketplace account deletion endpoint check
@@ -436,6 +441,7 @@ type EbayOrder = {
   orderFulfillmentStatus?: string; // NOT_STARTED | IN_PROGRESS | FULFILLED
   pricingSummary?: { total?: { value: string }; priceSubtotal?: { value: string }; deliveryCost?: { value: string } } & Record<string, unknown>;
   lineItems: {
+    lineItemId?: string;
     sku?: string;
     title: string;
     quantity: number;
@@ -585,6 +591,100 @@ async function takeOrder(o: EbayOrder) {
   if (firstId) await db.from('ebay_orders').update({ ledger_entry_id: firstId }).eq('order_id', o.orderId);
 }
 
+// ---- Tracking back to eBay ----
+
+/**
+ * The carrier eBay is told for a tracking number. Shippo packages are USPS; a TCG Tracking envelope
+ * number (like AB962460) isn't a USPS number, so it goes up as carrier "Other" with the TCG Tracking name.
+ */
+async function carrierFor(tracking: string): Promise<{ code: string; tcg: boolean }> {
+  const { data: l } = await db.from('shipping_labels').select('method').eq('tracking_number', tracking)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (l?.method === 'envelope') return { code: 'Other', tcg: true };
+  if (l?.method === 'package' || /^9\d{21}$|^9\d{25}$|^(EA|EC|LZ|RR)\d{9}US$/i.test(tracking)) return { code: 'USPS', tcg: false };
+  return { code: 'Other', tcg: false };
+}
+
+/**
+ * Send an order's tracking number to eBay (Fulfillment API createShippingFulfillment), which marks it
+ * shipped there. Skipped if eBay already has that number. If eBay won't take a TCG Tracking envelope
+ * number, the order is still marked shipped on eBay (no tracking) so it isn't late, and the reason is
+ * kept in ebay_tracking_error. A failure eBay may get past later (5xx, rate limit) is retried by the tick.
+ */
+async function sendTracking(orderId: string) {
+  const { data: row } = await db.from('ebay_orders').select('order_id, tracking_number, ebay_tracking_tries').eq('order_id', orderId).maybeSingle();
+  const tracking = row?.tracking_number?.trim();
+  if (!row || !tracking) return { ok: false, error: 'No tracking number' };
+  const save = (fields: Record<string, unknown>) => db.from('ebay_orders').update(fields).eq('order_id', orderId);
+  try {
+    const o = (await ebay('GET', `/sell/fulfillment/v1/order/${encodeURIComponent(orderId)}`)) as EbayOrder;
+    if (o.cancelStatus?.cancelState === 'CANCELED') {
+      await save({ ebay_status: 'CANCELED', ebay_tracking_error: 'Order was cancelled on eBay' });
+      return { ok: false, error: 'cancelled' };
+    }
+    const have = await ebay('GET', `/sell/fulfillment/v1/order/${encodeURIComponent(orderId)}/shipping_fulfillment`, undefined, [404]);
+    const already = ((have?.fulfillments ?? []) as { fulfillmentId?: string; shipmentTrackingNumber?: string }[])
+      .find((f) => (f.shipmentTrackingNumber ?? '').replace(/\s/g, '').toUpperCase() === tracking.replace(/\s/g, '').toUpperCase());
+    if (already) {
+      await save({ ebay_tracking_sent_at: new Date().toISOString(), ebay_tracking_error: null, ebay_fulfillment_id: already.fulfillmentId ?? null, ebay_status: 'FULFILLED' });
+      return { ok: true, already: true };
+    }
+    const lineItems = o.lineItems.filter((li) => li.lineItemId).map((li) => ({ lineItemId: li.lineItemId!, quantity: li.quantity }));
+    if (!lineItems.length) throw new Error('eBay order has no line items');
+    const carrier = await carrierFor(tracking);
+    const post = (body: Record<string, unknown>) => fetchFulfillment(orderId, { lineItems, shippedDate: new Date().toISOString(), ...body });
+    let note: string | null = null;
+    let id: string | null;
+    try {
+      id = await post({ shippingCarrierCode: carrier.code, trackingNumber: tracking });
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 0;
+      if (!carrier.tcg || status < 400 || status >= 500 || status === 429) throw err;
+      // eBay doesn't know TCG Tracking numbers: still mark it shipped so it isn't late.
+      id = await post({});
+      note = `Marked shipped on eBay without tracking: eBay didn't take the TCG Tracking number (${(err as Error).message.slice(0, 300)})`;
+    }
+    await save({ ebay_tracking_sent_at: new Date().toISOString(), ebay_tracking_error: note, ebay_fulfillment_id: id, ebay_status: 'FULFILLED' });
+    return { ok: true, carrier: carrier.code, note };
+  } catch (err) {
+    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    const status = (err as { status?: number }).status ?? 0;
+    console.error('ebay tracking', orderId, msg);
+    // Leave transient failures for the tick to retry (no error saved); a refusal is shown in the ledger.
+    const retry = !status || status >= 500 || status === 429;
+    await save({ ebay_tracking_error: retry ? null : msg, ebay_tracking_tries: (row.ebay_tracking_tries ?? 0) + 1 });
+    return { ok: false, error: msg };
+  }
+}
+
+/** createShippingFulfillment; returns the fulfillment id from the Location header. */
+async function fetchFulfillment(orderId: string, body: Record<string, unknown>): Promise<string | null> {
+  const r = await fetch(`${API}/sell/fulfillment/v1/order/${encodeURIComponent(orderId)}/shipping_fulfillment`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json', 'X-EBAY-C-MARKETPLACE-ID': MARKETPLACE },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const parsed = await r.json().catch(() => null);
+    const errs = (parsed?.errors ?? []) as { message?: string; longMessage?: string }[];
+    const err = new Error(`eBay: ${errs.map((e) => e.longMessage || e.message).filter(Boolean).join(' ') || r.status}`) as Error & { status: number };
+    err.status = r.status;
+    throw err;
+  }
+  return r.headers.get('Location')?.split('/').pop() ?? null;
+}
+
+/** Tracking numbers that haven't reached eBay yet (a missed trigger or an eBay hiccup), up to 5 tries each. */
+async function retryTracking() {
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const { data } = await db.from('ebay_orders').select('order_id').not('tracking_number', 'is', null)
+    .is('ebay_tracking_sent_at', null).is('ebay_tracking_error', null).lt('ebay_tracking_tries', 5)
+    .gte('ordered_at', since).limit(10);
+  let sent = 0;
+  for (const r of data ?? []) if ((await sendTracking(r.order_id)).ok) sent++;
+  return sent;
+}
+
 // ---- Best Offers and buyer messages (eBay's Trading API, which takes the same OAuth token) ----
 
 /** Best Offer follows the site's offer settings: on or off, and offers under the minimum are declined by eBay. */
@@ -698,7 +798,10 @@ async function respondOffer(id: string) {
     ? `<CounterOfferPrice currencyID="USD">${(o.counter_cents / 100).toFixed(2)}</CounterOfferPrice><CounterOfferQuantity>1</CounterOfferQuantity>`
     : '';
   try {
-    await trading('RespondToBestOffer', `<ItemID>${esc(o.ebay_item_id)}</ItemID><BestOfferID>${esc(o.ebay_offer_id)}</BestOfferID><Action>${action}</Action>${counter}`);
+    // The note typed with the answer in the ledger; eBay shows it to the buyer (250 characters max).
+    const note = (o.seller_message ?? '').trim().slice(0, 250);
+    const response = note ? `<SellerResponse>${esc(note)}</SellerResponse>` : '';
+    await trading('RespondToBestOffer', `<ItemID>${esc(o.ebay_item_id)}</ItemID><BestOfferID>${esc(o.ebay_offer_id)}</BestOfferID><Action>${action}</Action>${counter}${response}`);
     await db.from('shop_offers').update({ ebay_error: null }).eq('id', id);
     return { ok: true };
   } catch (err) {
@@ -805,6 +908,12 @@ async function tick() {
   } catch (err) {
     console.error('ebay messages', err);
     out.messages_error = String(err);
+  }
+  try {
+    out.tracking_sent = await retryTracking();
+  } catch (err) {
+    console.error('ebay tracking retry', err);
+    out.tracking_error = String(err);
   }
   const { data: dirty } = await db.from('shop_listings').select('id').eq('ebay_dirty', true).order('updated_at').limit(40);
   let synced = 0;
@@ -965,6 +1074,7 @@ Deno.serve(async (req) => {
     if (b.action === 'tick') return json(await tick());
     if (b.action === 'offer_respond' && typeof b.id === 'string') return json(await respondOffer(b.id));
     if (b.action === 'message_reply' && typeof b.id === 'string') return json(await replyMessage(b.id));
+    if (b.action === 'fulfill' && typeof b.id === 'string') return json(await sendTracking(b.id));
     return json({ error: 'Unknown action' }, 400);
   }
 
