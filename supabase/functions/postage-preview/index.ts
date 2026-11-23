@@ -11,8 +11,11 @@
  * Needs header x-hub-token matching vault secret shop_sync_token. Deploy with verify_jwt off.
  */
 
-import { db, loadSettings } from '../_shared/cards.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 import { buyLetterPostage, stampLabel, type Box } from '../_shared/postage.ts';
+
+const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+const loadSettings = async () => (await db.from('shop_settings').select('*').eq('id', 1).single()).data;
 
 const box = (v: any): Box | undefined =>
   v && ['x', 'y', 'w', 'h'].every((k) => typeof v[k] === 'number' && v[k] >= 0 && v[k] <= 1) ? { x: v.x, y: v.y, w: v.w, h: v.h } : undefined;
