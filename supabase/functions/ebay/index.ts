@@ -439,6 +439,7 @@ type EbayOrder = {
   cancelStatus?: { cancelState?: string };
   totalMarketplaceFee?: { value: string };
   orderFulfillmentStatus?: string; // NOT_STARTED | IN_PROGRESS | FULFILLED
+  orderPaymentStatus?: string; // PAID | PENDING | FAILED | FULLY_REFUNDED | PARTIALLY_REFUNDED
   pricingSummary?: { total?: { value: string }; priceSubtotal?: { value: string }; deliveryCost?: { value: string } } & Record<string, unknown>;
   lineItems: {
     lineItemId?: string;
@@ -483,6 +484,7 @@ function shipInfo(o: EbayOrder) {
     items_cents: o.pricingSummary?.priceSubtotal ? cents(o.pricingSummary.priceSubtotal) : o.lineItems.reduce((n, li) => n + cents(li.lineItemCost), 0),
     shipping_cents: cents(o.pricingSummary?.deliveryCost),
     ebay_status: o.cancelStatus?.cancelState === 'CANCELED' ? 'CANCELED' : o.orderFulfillmentStatus ?? null,
+    payment_status: o.orderPaymentStatus ?? null,
   };
 }
 
@@ -492,7 +494,7 @@ function shipInfo(o: EbayOrder) {
  */
 async function refreshOrders() {
   const since = new Date(Date.now() - 45 * 86400_000).toISOString();
-  const { data: open } = await db.from('ebay_orders').select('order_id, ship_to, ebay_status')
+  const { data: open } = await db.from('ebay_orders').select('order_id, ship_to, ebay_status, payment_status')
     .is('shipped_at', null).gte('ordered_at', since).order('ordered_at').limit(25);
   let changed = 0;
   for (const row of open ?? []) {
@@ -500,10 +502,10 @@ async function refreshOrders() {
     const o = (await ebay('GET', `/sell/fulfillment/v1/order/${encodeURIComponent(row.order_id)}`, undefined, [404])) as EbayOrder | null;
     if (!o?.orderId) continue;
     const info = shipInfo(o);
-    const fields: Record<string, unknown> = { ebay_status: info.ebay_status, ship_by: info.ship_by, items_cents: info.items_cents, shipping_cents: info.shipping_cents };
+    const fields: Record<string, unknown> = { ebay_status: info.ebay_status, payment_status: info.payment_status, ship_by: info.ship_by, items_cents: info.items_cents, shipping_cents: info.shipping_cents };
     if (!row.ship_to && info.ship_to) fields.ship_to = info.ship_to;
     if (info.ebay_status === 'FULFILLED') fields.shipped_at = new Date().toISOString();
-    if (info.ebay_status !== row.ebay_status || fields.ship_to || fields.shipped_at) changed++;
+    if (info.ebay_status !== row.ebay_status || info.payment_status !== row.payment_status || fields.ship_to || fields.shipped_at) changed++;
     await db.from('ebay_orders').update(fields).eq('order_id', row.order_id);
   }
   return changed;
