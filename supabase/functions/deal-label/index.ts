@@ -5,7 +5,8 @@
  * (the payout partner); it is charged to the cards' owners, split by sale price.
  *
  * Body: { method: 'envelope'|'package', ship_to: { name, line1, line2?, city, state, postal_code },
- *         description?, value_cents?, partner_id, owner_id?, force?, entry_id? }
+ *         description?, value_cents?, partner_id, owner_id?, force?, entry_id?, cards? }
+ * cards (envelopes) is how many cards ship; with envelope postage on it sets the letter weight.
  *   or { action: 'verify', ship_to } -> { valid, address, messages }: the USPS-standard address.
  *   or { action: 'templates' } -> { templates, default_id }: the Shippo parcel templates for packages.
  * template_id (packages) picks one of those; otherwise the default.
@@ -18,7 +19,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { db, defaultTemplate, loadSettings, parcelTemplates, shippoLabel, splitPostage, tcgTrackingLabel, verifyAddress, type Order } from '../_shared/cards.ts';
+import { db, defaultTemplate, loadSettings, parcelTemplates, postageHow, postagePlatform, shippoLabel, splitPostage, tcgTrackingLabel, verifyAddress, type Order } from '../_shared/cards.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -116,6 +117,7 @@ Deno.serve(async (req) => {
   const description = str(b.description, 120) || null;
   const value_cents = Number.isInteger(b.value_cents) && b.value_cents > 0 ? Math.min(b.value_cents, 9_999_999) : null;
   const entry_id = typeof b.entry_id === 'string' && UUID.test(b.entry_id) ? b.entry_id : null;
+  const cards = Number.isInteger(b.cards) && b.cards > 0 ? Math.min(b.cards, 99) : 1;
 
   // Ship to the USPS-standard form of the address; stop if USPS can't find it.
   try {
@@ -155,14 +157,14 @@ Deno.serve(async (req) => {
       stripe_fee_cents: null,
       ledger_entry_id: null,
     } satisfies Order;
-    const label = method === 'envelope' ? await tcgTrackingLabel(order) : await shippoLabel(order, s, typeof b.template_id === 'string' ? b.template_id : null);
+    const label = method === 'envelope' ? await tcgTrackingLabel(order, s, cards) : await shippoLabel(order, s, typeof b.template_id === 'string' ? b.template_id : null);
     const cost = label.label_cost_cents ?? (method === 'envelope' ? s.envelope_cost_cents : 0);
 
     // David's accounts pay for the label; the cost goes to the cards' owners, split by sale price.
     let expense_entry_id: string | null = null;
     if (cost) {
       const parts = splitPostage(cost, await saleOwners(entry_id, owner_id));
-      const base = `Label ${row.ref} · ${method === 'envelope' ? 'tracked envelope' : 'USPS package'} · tracking ${label.tracking_number}`;
+      const base = `Label ${row.ref} · ${method === 'envelope' ? postageHow(label).toLowerCase() : 'USPS package'} · tracking ${label.tracking_number}`;
       const total = parts.reduce((n, p) => n + p.value, 0);
       for (const p of parts) {
         const { data: e, error: ee } = await db.from('entries').insert({
@@ -171,7 +173,7 @@ Deno.serve(async (req) => {
           partner_id: s.payout_partner_id ?? b.partner_id,
           owner_id: p.owner, // null = shared (50/50)
           amount: -p.cents / 100,
-          platform: method === 'envelope' ? 'TCG Tracking' : 'Shippo',
+          platform: postagePlatform(method, label),
           description: `Postage${description ? `: ${description}` : ''} (${ship_to.name})`.slice(0, 200),
           note: parts.length > 1
             ? `${base} · $${(cost / 100).toFixed(2)} label split by sale price: this part $${(p.cents / 100).toFixed(2)} for $${(p.value / 100).toFixed(2)} of $${(total / 100).toFixed(2)}`
