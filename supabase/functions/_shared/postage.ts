@@ -14,10 +14,10 @@ import { PDFDocument, rgb } from 'npm:pdf-lib@1.17.1';
 /** A box as fractions of the page, measured from the bottom-left corner (PDF style). */
 export type Box = { x: number; y: number; w: number; h: number };
 
-/** Where the postage sits on EasyPost's 6x4 letter label. Tuned from a sample label. */
-export const POSTAGE_CROP: Box = { x: 0.6, y: 0.6, w: 0.4, h: 0.4 };
+/** Where the postage block (indicia, date, origin ZIP, price, 2D barcode) sits on EasyPost's 6x4 letter label. Tuned from a test label 2026-11-23. */
+export const POSTAGE_CROP: Box = { x: 0.37, y: 0.71, w: 0.63, h: 0.29 };
 /** Where it goes on TCG Tracking's 6x4 (L64) label: the top-right stamp corner. */
-export const POSTAGE_SPOT: Box = { x: 0.66, y: 0.6, w: 0.32, h: 0.38 };
+export const POSTAGE_SPOT: Box = { x: 0.4, y: 0.64, w: 0.59, h: 0.35 };
 
 /** The letter we mail: a card in a semi-rigid holder in an envelope. EasyPost needs dimensions. */
 const LETTER = { length: 6.5, width: 3.625, height: 0.25 };
