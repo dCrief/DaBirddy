@@ -4,6 +4,7 @@
  * Env vars (set as Supabase secrets):
  *   TCGTRACKING_API_KEY, TCGTRACKING_SHIPPER_NUMBER — envelope labels (tcgtracking.com)
  *   SHIPPO_API_KEY                                   — package labels (goshippo.com)
+ *   EASYPOST_API_KEY (EASYPOST_TEST_KEY for previews) — postage printed on envelope labels (easypost.com)
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY          — provided automatically
  *
  * The return address, default package and shipping prices live in the
@@ -11,6 +12,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { buyLetterPostage, stampLabel, type Postage } from './postage.ts';
 
 export const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
   auth: { persistSession: false },
@@ -35,6 +37,9 @@ export type Settings = {
   package_cents: number;
   envelope_under_cents: number;
   envelope_max_cards: number; // more cards than this ship in a package
+  envelope_postage: boolean; // buy USPS letter postage (EasyPost) and print it on the envelope label
+  envelope_weight_tiers: WeightTier[]; // letter weight by card count, for that postage
+  envelope_nonmachinable: boolean; // pay USPS's non-machinable surcharge on envelope postage
   auto_print: boolean; // send new labels straight to David's Rollo
   offers_enabled: boolean;
   offer_min_percent: number;
@@ -86,6 +91,18 @@ export type Order = {
   ledger_entry_id: string | null;
 };
 
+/** "Up to `cards` cards weigh `oz` ounces." The last tier covers anything bigger. */
+export type WeightTier = { cards: number; oz: number };
+
+export const DEFAULT_TIERS: WeightTier[] = [{ cards: 2, oz: 1 }, { cards: 4, oz: 2 }, { cards: 5, oz: 3.5 }];
+
+/** Letter weight for this many cards: the first tier that fits, else the heaviest. Never over USPS's 3.5 oz letter limit. */
+export function envelopeOunces(cards: number, tiers: WeightTier[] | null | undefined): number {
+  const list = (tiers?.length ? tiers : DEFAULT_TIERS).filter((t) => t.cards > 0 && t.oz > 0).sort((a, b) => a.cards - b.cards);
+  const tier = list.find((t) => cards <= t.cards) ?? list[list.length - 1] ?? { oz: 1 };
+  return Math.min(3.5, tier.oz);
+}
+
 export async function loadSettings(): Promise<Settings> {
   const { data, error } = await db.from('shop_settings').select('*').eq('id', 1).single();
   if (error) throw error;
@@ -121,10 +138,15 @@ export type LabelResult = {
   label_url?: string;
   label_cost_cents?: number;
   carrier: string;
+  postage_oz?: number; // envelope postage bought from EasyPost, at this weight
 };
 
-/** Envelope label from TCG Tracking. Re-sending the same order number returns the existing label. */
-export async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
+/**
+ * Envelope label from TCG Tracking. Re-sending the same order number returns the existing label.
+ * With envelope postage on in settings, USPS letter postage for the order's weight (by card count)
+ * is bought from EasyPost and printed in the label's stamp corner; its price is the label cost.
+ */
+export async function tcgTrackingLabel(o: Order, s?: Settings, cards?: number): Promise<LabelResult> {
   const key = Deno.env.get('TCGTRACKING_API_KEY');
   const shipper = Deno.env.get('TCGTRACKING_SHIPPER_NUMBER');
   if (!key || !shipper) throw new Error('TCG Tracking isn’t connected yet (add TCGTRACKING_API_KEY and TCGTRACKING_SHIPPER_NUMBER)');
@@ -159,13 +181,52 @@ export async function tcgTrackingLabel(o: Order): Promise<LabelResult> {
   }
   if (!body.tracking_number) throw new Error('TCG Tracking didn’t return a tracking number');
   let label_path: string | undefined;
+  let label_cost_cents: number | undefined;
+  let postage_oz: number | undefined;
   if (pdf) {
     label_path = `${o.order_number}.pdf`;
-    const bytes = Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0));
+    let bytes: Uint8Array = Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0));
+    if (s?.envelope_postage) {
+      const count = cards ?? o.items.reduce((n, it) => n + it.qty, 0);
+      const p = await envelopePostage(o, s, envelopeOunces(count, s.envelope_weight_tiers));
+      postage_oz = envelopeOunces(count, s.envelope_weight_tiers);
+      bytes = await stampLabel(bytes, p.pdf);
+      label_cost_cents = p.cost_cents;
+    }
     const { error } = await db.storage.from('shop-labels').upload(label_path, bytes, { contentType: 'application/pdf', upsert: true });
     if (error) throw new Error(`Saving the label: ${error.message}`);
+  } else if (s?.envelope_postage) {
+    throw new Error('TCG Tracking didn’t return the label PDF, so no postage was bought. Try again.');
   }
-  return { tracking_number: body.tracking_number, label_path, carrier: 'TCG Tracking' };
+  return { tracking_number: body.tracking_number, label_path, label_cost_cents, postage_oz, carrier: 'TCG Tracking' };
+}
+
+/**
+ * The order's letter postage. Bought once: the PDF and price are kept in shop-labels under postage/,
+ * so a retry (say the label upload failed) reuses it instead of paying twice.
+ */
+async function envelopePostage(o: Order, s: Settings, oz: number): Promise<Postage> {
+  const base = `postage/${o.order_number}`;
+  const saved = await db.storage.from('shop-labels').download(`${base}.json`).then((r) => r.data?.text()).catch(() => null);
+  if (saved) {
+    const meta = JSON.parse(saved);
+    const { data } = await db.storage.from('shop-labels').download(`${base}.pdf`);
+    if (data) return { ...meta, pdf: new Uint8Array(await data.arrayBuffer()) };
+  }
+  if (!s.from_street1 || !s.from_city || !s.from_state || !s.from_zip) {
+    throw new Error('Add your return address in the ledger (Settings → Shop & shipping) before buying postage');
+  }
+  const t = o.ship_to!;
+  const p = await buyLetterPostage({
+    reference: o.order_number,
+    oz,
+    nonmachinable: s.envelope_nonmachinable,
+    to: { name: t.name || o.buyer_name || 'Customer', street1: t.line1, street2: t.line2, city: t.city, state: t.state, zip: t.postal_code },
+    from: { name: s.from_name ?? 'DaBirddy', street1: s.from_street1, street2: s.from_street2, city: s.from_city, state: s.from_state, zip: s.from_zip, phone: s.from_phone },
+  });
+  await db.storage.from('shop-labels').upload(`${base}.pdf`, p.pdf, { contentType: 'application/pdf', upsert: true });
+  await db.storage.from('shop-labels').upload(`${base}.json`, JSON.stringify({ cost_cents: p.cost_cents, tracking: p.tracking, shipment_id: p.shipment_id, oz }), { contentType: 'application/json', upsert: true });
+  return p;
 }
 
 export type ParcelTemplate = { id: string; name: string; length: string; width: string; height: string; distance_unit: string; weight: string; weight_unit: string };
@@ -321,7 +382,7 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
         address_warning: check.valid ? null : `USPS couldn’t confirm this address${check.messages[0] ? `: ${check.messages[0]}` : ''}. Check it with the buyer.`,
       }).eq('id', o.id);
     }
-    const label = o.method === 'envelope' ? await tcgTrackingLabel(o) : await shippoLabel(o, s);
+    const label = o.method === 'envelope' ? await tcgTrackingLabel(o, s) : await shippoLabel(o, s);
     const cost = label.label_cost_cents ?? (o.method === 'envelope' ? s.envelope_cost_cents : null);
     await db.from('shop_orders').update({
       tracking_number: label.tracking_number,
@@ -333,7 +394,7 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
       ...(s.auto_print ? { print_requested_at: new Date().toISOString() } : {}),
     }).eq('id', o.id);
     // David's accounts pay for the label; the cost goes to the cards' owners.
-    if (cost && s.payout_partner_id) await logPostage(o, cost, s.payout_partner_id, label.carrier);
+    if (cost && s.payout_partner_id) await logPostage(o, cost, s.payout_partner_id, label);
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -478,10 +539,18 @@ export function splitPostage(cents: number, parts: { owner: string | null; value
 
 const dollars = (c: number) => (c / 100).toFixed(2);
 
+/** "Tracked envelope · 2 oz USPS letter postage (EasyPost)" when we bought the postage. */
+export const postageHow = (label: LabelResult) =>
+  label.postage_oz ? `Tracked envelope · ${label.postage_oz} oz USPS letter postage (EasyPost)` : 'Tracked envelope';
+
+/** Who was paid for the label: EasyPost for envelope postage, else TCG Tracking (envelope) or Shippo (package). */
+export const postagePlatform = (method: 'envelope' | 'package', label: LabelResult) =>
+  method === 'package' ? 'Shippo' : label.postage_oz ? 'EasyPost' : 'TCG Tracking';
+
 /** David pays the label; the cost is split across the cards' owners (see splitPostage). One line per owner. */
-async function logPostage(o: Order, cents: number, partnerId: string, carrier: string) {
+async function logPostage(o: Order, cents: number, partnerId: string, label: LabelResult) {
   const parts = splitPostage(cents, o.items.map((it) => ({ owner: it.owner_id ?? null, value: it.price_cents * it.qty })));
-  const how = o.method === 'envelope' ? 'Tracked envelope' : `${carrier} package`;
+  const how = o.method === 'envelope' ? postageHow(label) : `${label.carrier} package`;
   for (const p of parts) {
     const { error } = await db.from('entries').insert({
       occurred_on: today(),
@@ -489,7 +558,7 @@ async function logPostage(o: Order, cents: number, partnerId: string, carrier: s
       partner_id: partnerId,
       amount: -p.cents / 100,
       owner_id: p.owner, // null = shared (50/50)
-      platform: o.method === 'envelope' ? 'TCG Tracking' : 'Shippo',
+      platform: postagePlatform(o.method, label),
       description: `Postage for website ${o.order_number}`,
       note: parts.length > 1
         ? `${how} · $${dollars(cents)} label split by card price: this part $${dollars(p.cents)} for $${dollars(p.value)} of $${dollars(o.subtotal_cents)} in cards · tracking on the order`
