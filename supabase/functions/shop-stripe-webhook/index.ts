@@ -195,11 +195,13 @@ async function stripeFee(paymentIntent: string): Promise<number | null> {
 
 async function notifyOrder(orderId: string) {
   const { data: o } = await db.from('shop_orders')
-    .select('order_number, items, total_cents, subtotal_cents, shipping_cents, method, buyer_name, label_error, tracking_number, stock_problem')
+    .select('order_number, items, total_cents, subtotal_cents, shipping_cents, method, buyer_name, label_error, tracking_number, stock_problem, combine_shipping, combine_with, whatnot_username')
     .eq('id', orderId).maybeSingle();
   if (!o) return;
   const items = (o.items as { title: string; qty: number }[]).map((it) => (it.qty > 1 ? `${it.qty}× ${it.title}` : it.title)).join(', ');
-  const label = o.tracking_number ? 'Label ready' : o.label_error ? 'Label needs attention' : 'Making the label';
+  const label = o.combine_shipping
+    ? `Combined shipping with ${o.whatnot_username ? `Whatnot @${o.whatnot_username}` : o.combine_with ? `order ${o.combine_with}` : 'an earlier order'}, no label`
+    : o.tracking_number ? 'Label ready' : o.label_error ? 'Label needs attention' : 'Making the label';
   await notifyLedger('orders', {
     title: `${o.stock_problem ? '⚠️ ' : ''}New order: ${money(o.total_cents ?? o.subtotal_cents + o.shipping_cents)}`,
     body: `${o.buyer_name ?? 'Someone'} bought ${items}. ${o.method === 'envelope' ? 'Envelope' : 'Package'} · ${label}.${o.stock_problem ? ` ${o.stock_problem}` : ''}`,

@@ -232,6 +232,14 @@
     .coupon-on .link:active { background: rgba(255,255,255,0.12); }
     .coupon-msg { font-size: 0.8rem; color: #ff8fa3; }
     .coupon-msg:empty { display: none; }
+    .combine { border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px; }
+    .combine-tick { display: flex; gap: 10px; align-items: flex-start; font-size: 0.85rem; line-height: 1.4; cursor: pointer; }
+    .combine-tick input { flex: none; width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--accent3); }
+    .combine-fields { display: grid; gap: 8px; }
+    .combine-fields[hidden] { display: none; }
+    .combine-fields input { width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line2); border-radius: 10px; padding: 0 12px; min-height: 42px; }
+    .combine-fields input::placeholder { color: var(--muted); }
+    .combine-fields .pkg { font-size: 0.8rem; line-height: 1.45; color: var(--text); }
     .coupon-msg.note { color: var(--muted); }
     .sum.discount { color: var(--accent3); }
     .promo { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; background: linear-gradient(90deg, rgba(255,77,109,0.18), rgba(255,209,102,0.18)); border-bottom: 1px solid var(--line); color: var(--text); font-size: 0.85rem; font-weight: 600; text-align: center; }
@@ -420,6 +428,15 @@
     </form>
     <div class="coupon-on" id="couponOn" hidden><span id="couponText"></span><button type="button" class="link" id="couponRm">Remove</button></div>
     <p class="coupon-msg" id="couponMsg"></p>
+    <div class="combine">
+      <label class="combine-tick"><input type="checkbox" id="combineOn"><span><b>Combine shipping</b> with an order you already placed with us (on Whatnot or this site). No shipping charge.</span></label>
+      <div class="combine-fields" id="combineFields" hidden>
+        <input id="combineWn" maxlength="41" placeholder="Whatnot username (if you have one)" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Whatnot username">
+        <input id="combineRef" maxlength="40" placeholder="Earlier website order number (optional)" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Earlier order number">
+        <p class="pkg">We’ll add these cards to your earlier order and send everything together in one tracked package, not a plain white envelope. Use the same name and address as that order. This only works if that order hasn’t shipped yet.</p>
+        <p class="coupon-msg" id="combineMsg"></p>
+      </div>
+    </div>
     <div class="sum"><span>Cards</span><span id="sumCards">$0</span></div>
     <div class="sum discount" id="sumDiscRow" hidden><span id="discLabel">Coupon</span><span id="sumDisc">$0</span></div>
     <div class="sum"><span id="shipLabel">Shipping</span><span id="sumShip">$0</span></div>
@@ -461,6 +478,12 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
   // Shipping, same rule as the checkout: under $20 of cards (nothing sealed) goes in an envelope.
   var SHIP = { envelope: 150, pkg: 800, cutoff: 2000, maxCards: 5 };
   var CART_KEY = 'dabirddy_cards_cart_v1', LAST_KEY = 'dabirddy_cards_last_order';
+  // Combine shipping with an earlier order (Whatnot or this site). The tick only lasts this visit
+  // (so a later order doesn't ship free by accident); the Whatnot username is remembered.
+  var COMBO_KEY = 'dabirddy_cards_combine_v1';
+  var combo = { on: false, whatnot: '', order: '' };
+  try { var sv = JSON.parse(sessionStorage.getItem(COMBO_KEY) || 'null'); if (sv && typeof sv === 'object') combo = { on: !!sv.on, whatnot: String(sv.whatnot || ''), order: String(sv.order || '') }; } catch (e) {}
+  try { if (!combo.whatnot) combo.whatnot = localStorage.getItem(COMBO_KEY + '_wn') || ''; } catch (e) {}
   var cart = loadCart();   // [{ id, qty }]
   var loaded = false;      // cards loaded from the shop (not paused)
 
@@ -916,6 +939,8 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     var disc = !coupon || !eligible || short ? 0
       : coupon.amountOff ? Math.min(coupon.amountOff, eligible)
       : Math.min(Math.round(eligible * coupon.percent / 100), coupon.maxOff || Infinity, eligible);
+    // Combined with an earlier order: no shipping charge, and it all goes in a package.
+    if (combo.on) return { sub: sub, n: n, method: 'package', free: true, combined: true, ship: 0, eligible: eligible, disc: disc, short: short };
     return { sub: sub, n: n, method: env ? 'envelope' : 'package', free: free, ship: n && !free ? (env ? SHIP.envelope : SHIP.pkg) : 0, eligible: eligible, disc: disc, short: short };
   }
   function renderCart() {
@@ -939,8 +964,8 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
       }).join('');
       $('cartFoot').hidden = false;
       $('sumCards').textContent = money(t.sub);
-      $('shipLabel').textContent = t.method === 'envelope' ? 'Shipping · tracked envelope' : 'Shipping · tracked package';
-      $('sumShip').textContent = t.free ? 'Free' : money(t.ship);
+      $('shipLabel').textContent = t.combined ? 'Shipping · combined with your earlier order' : t.method === 'envelope' ? 'Shipping · tracked envelope' : 'Shipping · tracked package';
+      $('sumShip').textContent = t.combined ? '$0' : t.free ? 'Free' : money(t.ship);
       $('sumTotal').textContent = money(t.sub - t.disc + t.ship);
       renderCoupon(t);
     }
@@ -996,7 +1021,8 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
     fetch(SHOP_API + '/card-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: cart.map(function (l) { return l.offer ? { id: l.id, qty: 1, offer: l.offer } : { id: l.id, qty: l.qty }; }), coupon: coupon && totals().disc ? coupon.code : undefined, release: last || undefined })
+      body: JSON.stringify({ items: cart.map(function (l) { return l.offer ? { id: l.id, qty: 1, offer: l.offer } : { id: l.id, qty: l.qty }; }), coupon: coupon && totals().disc ? coupon.code : undefined, release: last || undefined,
+        combine: combo.on ? { whatnot: combo.whatnot.trim() || undefined, order: combo.order.trim() || undefined } : undefined })
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
@@ -1007,6 +1033,7 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
           location.href = x.d.url;
           return;
         }
+        if (x.d.badCombine) { $('combineMsg').textContent = x.d.error; btn.disabled = false; btn.textContent = 'Checkout'; return; }
         if (x.d.badCoupon) { setCoupon(null); $('couponMsg').textContent = x.d.error || 'That coupon code isn’t valid.'; }
         if (x.d.expiredOffers) cart.forEach(function (l) { if (x.d.expiredOffers.indexOf(l.id) !== -1) dropOffer(l); });
         if (x.d.unavailable) {
@@ -1071,6 +1098,24 @@ var SHOP_API = 'https://fbxrizapfpjyvhxwyweb.supabase.co/functions/v1';
       })
       .catch(function () { btn.disabled = false; msg.textContent = 'Couldn’t check that code. Try again.'; });
   });
+  // ── Combine shipping ──
+  function saveCombo() {
+    try { sessionStorage.setItem(COMBO_KEY, JSON.stringify(combo)); } catch (e) {}
+    try { localStorage.setItem(COMBO_KEY + '_wn', combo.whatnot); } catch (e) {}
+  }
+  $('combineOn').checked = combo.on;
+  $('combineWn').value = combo.whatnot;
+  $('combineRef').value = combo.order;
+  $('combineFields').hidden = !combo.on;
+  $('combineOn').addEventListener('change', function () {
+    combo.on = this.checked;
+    $('combineFields').hidden = !combo.on;
+    $('combineMsg').textContent = '';
+    saveCombo();
+    renderCart();
+  });
+  $('combineWn').addEventListener('input', function () { combo.whatnot = this.value.replace(/^@+/, ''); $('combineMsg').textContent = ''; saveCombo(); });
+  $('combineRef').addEventListener('input', function () { combo.order = this.value; $('combineMsg').textContent = ''; saveCombo(); });
   $('couponRm').addEventListener('click', function () { $('couponMsg').textContent = ''; setCoupon(null); });
 
   // ── Offers ──

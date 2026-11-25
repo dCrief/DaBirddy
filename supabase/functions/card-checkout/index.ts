@@ -1,6 +1,6 @@
 /**
  * POST /card-checkout — turns a cart of cards into a Stripe Checkout session.
- * Body: { items: [{ id: <listing uuid>, qty: number }], release?: <previous order id> }
+ * Body: { items: [{ id: <listing uuid>, qty: number }], release?: <previous order id>, combine?: { whatnot?, order? } }
  *    or { offer: <offer token>, release? }: pay an accepted or countered offer (one card at the offer price).
  *    A cart line can also carry `offer: <token>` (qty 1) to get that card at the offer price alongside other cards.
  *
@@ -15,6 +15,11 @@
  * coupon row), so two buyers can't both redeem the last use. The claim lapses when the Stripe page
  * expires (~31 min) or the order is cancelled (released, failed, or closed by the webhook).
  * Deploy with --no-verify-jwt.
+ *
+ * `combine` asks to ship with an order the buyer already placed (on Whatnot or this site): shipping is
+ * $0, the order is a package (cards added to an earlier order never go in a plain white envelope), and
+ * no label is bought for it. `whatnot` is their Whatnot username and `order` the earlier order number,
+ * both optional; they go on the packing slip and in the ledger.
  *
  * Env: STRIPE_SECRET_KEY, SHOP_CARDS_URL (default https://dabirddy.com/cards)
  */
@@ -35,9 +40,17 @@ Deno.serve(async (req) => {
   let release: unknown;
   let couponCode: string | null = null;
   let fromOfferPage: string | null = null;
+  let combine: { whatnot: string | null; ref: string | null } | null = null;
   try {
     const body = await req.json();
     release = body.release;
+    if (body.combine && typeof body.combine === 'object') {
+      const w = typeof body.combine.whatnot === 'string' ? body.combine.whatnot.trim().replace(/^@+/, '') : '';
+      const r = typeof body.combine.order === 'string' ? body.combine.order.trim().replace(/^#+/, '') : '';
+      if (w && !/^[A-Za-z0-9_.-]{1,40}$/.test(w)) return json(req, { error: 'That Whatnot username doesn’t look right. Use letters, numbers, dots, dashes or underscores.', badCombine: true }, 409);
+      if (r && !/^[A-Za-z0-9-]{3,40}$/.test(r)) return json(req, { error: 'That order number doesn’t look right.', badCombine: true }, 409);
+      combine = { whatnot: w || null, ref: r ? r.toUpperCase() : null };
+    }
     if (typeof body.coupon === 'string' && body.coupon.trim()) {
       const code = body.coupon.trim().toUpperCase();
       couponCode = code;
@@ -138,6 +151,8 @@ Deno.serve(async (req) => {
     });
     const settings = await loadSettings();
     const ship = shippingFor(items.map((it) => ({ ...it, ship: (byId.get(it.listing_id)!.shipping ?? 'auto') as ShipChoice })), settings);
+    // Combined with an earlier order: no shipping charge, and it goes out as a package.
+    if (combine) Object.assign(ship, { cents: 0, method: 'package' as const, free: true });
 
     // Coupons come off the cards at their listed price only, never off an accepted or countered offer.
     let discount = 0;
@@ -164,7 +179,8 @@ Deno.serve(async (req) => {
 
     const { data: order, error: oe } = await db
       .from('shop_orders')
-      .insert({ items, subtotal_cents: ship.subtotal, shipping_cents: ship.cents, method: ship.method, coupon_code: discount ? couponCode : null, discount_cents: discount })
+      .insert({ items, subtotal_cents: ship.subtotal, shipping_cents: ship.cents, method: ship.method, coupon_code: discount ? couponCode : null, discount_cents: discount,
+        ...(combine ? { combine_shipping: true, combine_with: combine.ref, whatnot_username: combine.whatnot } : {}) })
       .select('id, order_number')
       .single();
     if (oe) throw oe;
@@ -223,7 +239,9 @@ Deno.serve(async (req) => {
       shipping_options: [{
         shipping_rate_data: {
           type: 'fixed_amount',
-          display_name: ship.free
+          display_name: combine
+            ? 'Combined shipping with your earlier order'
+            : ship.free
             ? (ship.method === 'envelope' ? 'Free shipping · tracked envelope' : 'Free shipping · tracked package')
             : ship.method === 'envelope' ? 'Tracked envelope' : 'Tracked package (USPS Ground Advantage)',
           fixed_amount: { amount: ship.cents, currency: 'usd' },
@@ -234,7 +252,7 @@ Deno.serve(async (req) => {
         },
       }],
       payment_intent_data: { description: `DaBirddy cards order ${order.order_number}` },
-      metadata: { kind: 'cards', order_id: order.id, order_number: order.order_number, ...(offerPrice.size ? { offer_ids: [...offerPrice.values()].map((o) => o.id).join(',') } : {}), ...(discount ? { coupon: couponCode!, discount_cents: String(discount) } : {}) },
+      metadata: { kind: 'cards', order_id: order.id, order_number: order.order_number, ...(offerPrice.size ? { offer_ids: [...offerPrice.values()].map((o) => o.id).join(',') } : {}), ...(discount ? { coupon: couponCode!, discount_cents: String(discount) } : {}), ...(combine ? { combine: '1' } : {}) },
       expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
       success_url: `${base}/success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: fromOfferPage ? `${base}/offer.html?o=${fromOfferPage}` : `${base}/?cart=1`,
