@@ -12,6 +12,10 @@ export type SlipOrder = {
   coupon_code: string | null;
   buyer_name: string | null;
   ship_to: { name?: string | null } | null;
+  /** Shown above the order number; defaults to "Order". */
+  source?: string;
+  /** Deal labels with no order behind them: list the items, skip prices and totals. */
+  hide_prices?: boolean;
 };
 
 const THANKS = [
@@ -107,7 +111,7 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
   right(date, 10, reg, grey);
   rule();
   y -= 4;
-  text('Order', M, 9, reg, grey);
+  text(o.source ?? 'Order', M, 9, reg, grey);
   right('Ship to', 9, reg, grey);
   y -= 12;
   text(o.order_number, M, 11, bold);
@@ -118,7 +122,7 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
   const priceW = 70;
   const count = o.items.reduce((n, it) => n + it.qty, 0);
   text(`${count} item${count === 1 ? '' : 's'}`, M, 9, reg, grey);
-  right('Price', 9, reg, grey);
+  if (!o.hide_prices) right('Price', 9, reg, grey);
   y -= 14;
   for (const it of o.items) {
     const title = wrap(bold, 10, clean(bold, it.title), W - 2 * M - priceW);
@@ -126,7 +130,7 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
     room(title.length * 12 + (meta || it.inventory_no ? 12 : 0) + 8);
     title.forEach((line, i) => {
       text(line, M, 10, bold);
-      if (i === 0) right(it.qty > 1 ? `${it.qty} x ${usd(it.price_cents)}` : usd(it.price_cents), 10, reg);
+      if (i === 0 && !o.hide_prices) right(it.qty > 1 ? `${it.qty} x ${usd(it.price_cents)}` : usd(it.price_cents), 10, reg);
       y -= 12;
     });
     // Stock # first, in bold, so the right card is easy to pull.
@@ -148,19 +152,21 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
   }
 
   // Totals
-  room(80);
-  rule(2);
-  const discount = o.total_cents != null ? o.subtotal_cents + o.shipping_cents - o.total_cents : 0;
-  const row = (label: string, value: string, strong = false) => {
-    y -= 13;
-    text(label, M + 60, strong ? 11 : 9, strong ? bold : reg);
-    right(value, strong ? 11 : 9, strong ? bold : reg);
-  };
-  row('Cards', usd(o.subtotal_cents));
-  if (discount > 0) row(`Coupon${o.coupon_code ? ` ${o.coupon_code}` : ''}`, usd(-discount));
-  row('Shipping', o.shipping_cents ? usd(o.shipping_cents) : 'Free');
-  y -= 3;
-  row('Total paid', usd(o.total_cents ?? o.subtotal_cents + o.shipping_cents), true);
+  if (!o.hide_prices) {
+    room(80);
+    rule(2);
+    const discount = o.total_cents != null ? o.subtotal_cents + o.shipping_cents - o.total_cents : 0;
+    const row = (label: string, value: string, strong = false) => {
+      y -= 13;
+      text(label, M + 60, strong ? 11 : 9, strong ? bold : reg);
+      right(value, strong ? 11 : 9, strong ? bold : reg);
+    };
+    row('Cards', usd(o.subtotal_cents));
+    if (discount > 0) row(`Coupon${o.coupon_code ? ` ${o.coupon_code}` : ''}`, usd(-discount));
+    row('Shipping', o.shipping_cents ? usd(o.shipping_cents) : 'Free');
+    y -= 3;
+    row('Total paid', usd(o.total_cents ?? o.subtotal_cents + o.shipping_cents), true);
+  }
 
   // Thank-you note at the bottom of the last page
   const note = wrap(ital, 11, thanksFor(o.order_number), W - 2 * M - 16);
