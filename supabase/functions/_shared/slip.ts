@@ -16,6 +16,10 @@ export type SlipOrder = {
   source?: string;
   /** Deal labels with no order behind them: list the items, skip prices and totals. */
   hide_prices?: boolean;
+  /** Website orders the buyer asked to ship with an earlier order (Whatnot or this site). */
+  combine_shipping?: boolean | null;
+  combine_with?: string | null;
+  whatnot_username?: string | null;
 };
 
 const THANKS = [
@@ -118,6 +122,33 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
   right(o.ship_to?.name || o.buyer_name || '', 11, bold);
   rule(10);
 
+  // Combined shipping: a solid black banner so it can't be missed while packing.
+  if (o.combine_shipping || o.whatnot_username) {
+    const lines: [string, PDFFont, number][] = [];
+    if (o.combine_shipping) {
+      lines.push(['COMBINED SHIPPING', bold, 13]);
+      lines.push(['Ship in a PACKAGE, not a plain white envelope', bold, 9]);
+      const w = o.whatnot_username ? `Add to Whatnot order for @${o.whatnot_username}` : null;
+      const r = o.combine_with ? `Pack with order ${o.combine_with}` : null;
+      for (const t of [w, r]) if (t) for (const l of wrap(reg, 10, clean(reg, t), W - 2 * M - 16)) lines.push([l, reg, 10]);
+      if (!w && !r) lines.push(['Pack with this buyer\'s earlier order', reg, 10]);
+    } else {
+      lines.push([`Whatnot: @${o.whatnot_username}`, bold, 11]);
+    }
+    const boxH = lines.reduce((n, [, , sz]) => n + sz + 4, 0) + 12;
+    const white = rgb(1, 1, 1);
+    y -= boxH - 6;
+    page.drawRectangle({ x: M, y, width: W - 2 * M, height: boxH, color: ink });
+    let ly = y + boxH - 8;
+    for (const [t, f, sz] of lines) {
+      ly -= sz;
+      const c = clean(f, t);
+      page.drawText(c, { x: (W - f.widthOfTextAtSize(c, sz)) / 2, y: ly, size: sz, font: f, color: white });
+      ly -= 4;
+    }
+    y -= 16;
+  }
+
   // Items
   const priceW = 70;
   const count = o.items.reduce((n, it) => n + it.qty, 0);
@@ -163,7 +194,7 @@ export async function packingSlip(o: SlipOrder): Promise<Uint8Array> {
     };
     row('Cards', usd(o.subtotal_cents));
     if (discount > 0) row(`Coupon${o.coupon_code ? ` ${o.coupon_code}` : ''}`, usd(-discount));
-    row('Shipping', o.shipping_cents ? usd(o.shipping_cents) : 'Free');
+    row(o.combine_shipping ? 'Shipping (combined)' : 'Shipping', o.shipping_cents ? usd(o.shipping_cents) : 'Free');
     y -= 3;
     row('Total paid', usd(o.total_cents ?? o.subtotal_cents + o.shipping_cents), true);
   }

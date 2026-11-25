@@ -89,6 +89,11 @@ export type Order = {
   label_error: string | null;
   stripe_fee_cents: number | null;
   ledger_entry_id: string | null;
+  print_requested_at?: string | null;
+  /** Ships with an order the buyer already placed (Whatnot or this site): no label of its own. */
+  combine_shipping?: boolean;
+  combine_with?: string | null; // the earlier order number, if they gave it
+  whatnot_username?: string | null;
 };
 
 /** "Up to `cards` cards weigh `oz` ounces." The last tier covers anything bigger. */
@@ -370,6 +375,15 @@ export async function makeLabel(orderId: string): Promise<{ ok: boolean; error?:
   if (error) return { ok: false, error: error.message };
   const o = data as Order;
   if (o.tracking_number) return { ok: true };
+  // Combined with an earlier order: these cards go in that order's package, so no label is bought.
+  // The packing slip still prints; "Ship separately" in the ledger clears the flag and makes a label.
+  if (o.combine_shipping) {
+    const s = await loadSettings();
+    if (s.auto_print && !o.print_requested_at) {
+      await db.from('shop_orders').update({ print_requested_at: new Date().toISOString() }).eq('id', o.id);
+    }
+    return { ok: true };
+  }
   if (!o.ship_to) return { ok: false, error: 'No shipping address on this order' };
   try {
     const s = await loadSettings();

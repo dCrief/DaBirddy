@@ -30,7 +30,7 @@ export async function sendThanks(orderId: string): Promise<boolean> {
   if (!key) return false;
   try {
     const { data: o } = await db.from('shop_orders')
-      .select('order_number, status, items, subtotal_cents, shipping_cents, total_cents, coupon_code, method, buyer_name, buyer_email, ship_to, tracking_number')
+      .select('order_number, status, items, subtotal_cents, shipping_cents, total_cents, coupon_code, method, buyer_name, buyer_email, ship_to, tracking_number, combine_shipping')
       .eq('id', orderId).maybeSingle();
     if (!o?.buyer_email) return false;
     const { data: s } = await db.from('shop_settings').select('from_email').eq('id', 1).maybeSingle();
@@ -63,9 +63,10 @@ export async function sendThanks(orderId: string): Promise<boolean> {
 <table style="width:100%;border-collapse:collapse;margin-top:10px">
 ${line('Cards', usd(o.subtotal_cents))}
 ${coupon > 0 ? line(`Coupon${o.coupon_code ? ` ${esc(o.coupon_code)}` : ''}`, usd(-coupon)) : ''}
-${line(o.method === 'envelope' ? 'Shipping (tracked envelope)' : 'Shipping (tracked package)', o.shipping_cents ? usd(o.shipping_cents) : 'Free')}
+${line(o.combine_shipping ? 'Shipping (combined with your earlier order)' : o.method === 'envelope' ? 'Shipping (tracked envelope)' : 'Shipping (tracked package)', o.shipping_cents ? usd(o.shipping_cents) : 'Free')}
 ${line('Total paid', usd(total), true)}
 </table>
+${o.combine_shipping ? `<p style="margin:18px 0 0;color:#444;line-height:1.5">We’ll pack these cards in the same package as your earlier order, so there’s no extra shipping charge.</p>` : ''}
 ${t ? `<p style="margin:18px 0 0;color:#444;line-height:1.5"><b>Shipping to</b><br>${esc(t.name)}<br>${esc(t.line1)}${t.line2 ? `<br>${esc(t.line2)}` : ''}<br>${esc(t.city)}, ${esc(t.state)} ${esc(t.postal_code)}</p>` : ''}
 ${o.tracking_number ? `<p style="margin:14px 0 0;color:#444">Tracking: ${track ? `<a href="${track}" style="color:#e11d48">${esc(o.tracking_number)}</a>` : esc(o.tracking_number)}</p>` : ''}
 <p style="margin:22px 0 0;color:#444;line-height:1.5">Questions? Just reply to this email.<br>Thanks again for supporting DaBirddy!</p>
@@ -82,7 +83,7 @@ ${o.tracking_number ? `<p style="margin:14px 0 0;color:#444">Tracking: ${track ?
       '',
       `Cards ${usd(o.subtotal_cents)}`,
       ...(coupon > 0 ? [`Coupon ${usd(-coupon)}`] : []),
-      `Shipping ${o.shipping_cents ? usd(o.shipping_cents) : 'Free'}`,
+      `Shipping ${o.shipping_cents ? usd(o.shipping_cents) : 'Free'}${o.combine_shipping ? ' (combined with your earlier order)' : ''}`,
       `Total paid ${usd(total)}`,
       ...(o.tracking_number ? ['', `Tracking: ${o.tracking_number}`] : []),
       '',

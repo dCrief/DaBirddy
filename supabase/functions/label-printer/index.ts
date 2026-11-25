@@ -114,8 +114,9 @@ Deno.serve(async (req) => {
     const since = new Date(Date.now() - 3 * 86400e3).toISOString();
     const [orders, labels] = await Promise.all([
       db.from('shop_orders')
-        .select('id, order_number, print_requested_at, printed_at, label_path, label_url, created_at, items, subtotal_cents, shipping_cents, total_cents, coupon_code, buyer_name, ship_to')
-        .not('print_requested_at', 'is', null).not('tracking_number', 'is', null)
+        .select('id, order_number, print_requested_at, printed_at, label_path, label_url, created_at, items, subtotal_cents, shipping_cents, total_cents, coupon_code, buyer_name, ship_to, combine_shipping, combine_with, whatnot_username')
+        // Combined-shipping orders have no label of their own; only their packing slip prints.
+        .not('print_requested_at', 'is', null).or('tracking_number.not.is.null,combine_shipping.eq.true')
         .neq('status', 'cancelled').gt('print_requested_at', since).limit(20),
       db.from('shipping_labels')
         .select('id, ref, print_requested_at, printed_at, label_path, label_url, entry_id, description, value_cents, ship_to, created_at')
@@ -125,7 +126,7 @@ Deno.serve(async (req) => {
     if (orders.error) return json({ error: orders.error.message }, 500);
     if (labels.error) return json({ error: labels.error.message }, 500);
     const rows = [
-      ...(orders.data ?? []).map((o) => ({ ...o, name: o.order_number, slip: o as SlipOrder | null })),
+      ...(orders.data ?? []).map((o) => ({ ...o, name: o.order_number, slip: o as SlipOrder | null, slipOnly: !!o.combine_shipping && !o.label_path && !o.label_url })),
       ...(await dealSlips(labels.data ?? [])),
     ].sort((a, b) => a.print_requested_at.localeCompare(b.print_requested_at));
     // Stock numbers for the packing slips.
@@ -149,7 +150,7 @@ Deno.serve(async (req) => {
       }
       if (url) jobs.push({ id: o.id, order: o.name, requested_at: o.print_requested_at, url });
       // A packing slip right after the label, every time it prints.
-      if (url && o.slip) {
+      if ((url || ('slipOnly' in o && o.slipOnly)) && o.slip) {
         const slipUrl = await slipFor(o.slip);
         if (slipUrl) jobs.push({ id: o.id, order: `${o.name}-slip`, requested_at: o.print_requested_at, url: slipUrl });
       }
