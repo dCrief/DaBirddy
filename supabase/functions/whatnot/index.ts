@@ -13,11 +13,14 @@
  *
  * Nothing is written to the ledger: Whatnot payouts are logged by hand per stream.
  *
- * The other way: the tick links each live shop listing to its Whatnot product and variant
- * (external_id = inventory #). When a linked listing's quantity or status changes (sold on the site
- * or eBay, taken down, restocked) a trigger marks it whatnot_dirty and posts { action: 'push', id },
- * which sets the Whatnot variant's inventory to the shop quantity (0 unless live). The tick pushes
- * anything still dirty.
+ * The other way: each listing has a "List on Whatnot" switch (shop_listings.whatnot). When it's
+ * on and the card is live, the card is a Buy It Now product on Whatnot at the shop quantity and the
+ * shop price + 5% rounded up (the product is created the first time, after checking Whatnot for one
+ * with the same external_id). Otherwise its Whatnot stock is 0, and switching it off also takes it
+ * off the Whatnot shop. Any change to the switch, quantity, status or price marks the listing
+ * whatnot_dirty and a trigger posts { action: 'push', id }; the tick pushes anything still dirty.
+ * The tick also links listings to products already on Whatnot (external_id = inventory #) and turns
+ * their switch on.
  *
  * Callers:
  *   x-hub-token (vault shop_sync_token): { action: 'tick' | 'status' } | { action: 'push', id }
@@ -65,13 +68,13 @@ class WhatnotError extends Error {
 
 // The API allows 2 requests a second.
 let lastCall = 0;
-async function wn(path: string, body?: unknown): Promise<any> {
+async function wn(path: string, body?: unknown, method?: string): Promise<any> {
   const wait = lastCall + 550 - Date.now();
   if (wait > 0) await sleep(wait);
   for (let attempt = 0; ; attempt++) {
     lastCall = Date.now();
     const r = await fetch(API + path, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: method ?? (body === undefined ? 'GET' : 'POST'),
       headers: { Authorization: `Bearer ${TOKEN}`, accept: 'application/json', ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -147,21 +150,145 @@ async function takeOrder(o: Order): Promise<boolean> {
 
 // ---- Shop → Whatnot stock ----
 
-/** Set one listing's Whatnot stock to its shop quantity (0 unless live). */
-async function push(id: string): Promise<{ ok: boolean; qty?: number; error?: string; skipped?: string }> {
-  const { data: l } = await db.from('shop_listings').select('id, quantity, status, whatnot_variant_id, updated_at').eq('id', id).maybeSingle();
-  if (!l?.whatnot_variant_id) return { ok: true, skipped: 'not on Whatnot' };
-  const qty = l.status === 'live' ? Math.max(0, l.quantity) : 0;
+// What a new Whatnot product looks like (same as the first bulk listing run).
+const CATEGORY_POKEMON = '2';
+const PROFILE_CARDS = '1302457'; // "Cards" shipping profile, 0.4 oz
+const CONDITION_ATTR = '84';
+const CONDITION: Record<string, { label: string; note: string }> = {
+  nm: { label: 'Near Mint', note: 'Clean card with little to no wear.' },
+  ex: { label: 'Light Played', note: 'Light edge or corner wear and minor surface scuffs. No major flaws.' },
+  vg: { label: 'Moderately Played', note: 'Noticeable edge and corner wear, scuffs or light creasing.' },
+  poor: { label: 'Heavily Played', note: 'Heavy wear, creases or other major flaws.' },
+};
+const PHOTO_BASE = `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/shop-photos/`;
+
+/** Whatnot price: shop price + 5%, rounded up to the next whole dollar. */
+const whatnotPrice = (price: number) => Math.ceil(Math.round(Number(price) * 105) / 100);
+
+type Listing = {
+  id: string;
+  title: string;
+  set_name: string | null;
+  card_number: string | null;
+  variant: string | null;
+  category: string;
+  price: number;
+  quantity: number;
+  photos: string[] | null;
+  status: string;
+  inventory_no: string | null;
+  ebay_condition: string | null;
+  whatnot: boolean;
+  whatnot_product_id: string | null;
+  whatnot_variant_id: string | null;
+  whatnot_price: number | null;
+  whatnot_synced_qty: number | null;
+  updated_at: string;
+};
+const LISTING_COLS = 'id, title, set_name, card_number, variant, category, price, quantity, photos, status, inventory_no, ebay_condition, whatnot, whatnot_product_id, whatnot_variant_id, whatnot_price, whatnot_synced_qty, updated_at';
+
+const externalId = (l: Listing) => (l.inventory_no || l.id.slice(0, 8)).toUpperCase();
+
+function productBody(l: Listing) {
+  const num = l.card_number ? (/^[0-9]/.test(l.card_number) ? `#${l.card_number}` : l.card_number) : null;
+  const full = [l.title, num, l.set_name, l.variant, 'Pokemon Card'].filter(Boolean).join(' ');
+  const title = full.length <= 80 ? full : [l.title, num, l.set_name, l.variant].filter(Boolean).join(' ').slice(0, 80);
+  const cond = CONDITION[l.ebay_condition ?? 'nm'] ?? CONDITION.nm;
+  const description = [
+    `Card: ${l.title}`,
+    l.set_name && `Set: ${l.set_name}`,
+    l.card_number && `Number: ${l.card_number}`,
+    l.variant && `Printing: ${l.variant}`,
+    `Condition: ${cond.label}. ${cond.note}`,
+    'The photos are of the exact card you will receive.',
+    'Shipped in a sleeve inside a semi-rigid card holder or toploader. Ships within 2 business days.',
+    `Stock # ${externalId(l)}`,
+  ].filter(Boolean).join('\n');
+  const media = (l.photos ?? []).filter((p) => /\.jpe?g$/i.test(p) && !/_(m|p|t)\.jpg$/i.test(p)).slice(0, 10)
+    .map((p) => ({ url: PHOTO_BASE + p, alt: l.title }));
+  return {
+    title,
+    category: { id: CATEGORY_POKEMON },
+    description,
+    external_id: externalId(l),
+    attributes: [{ id: CONDITION_ATTR, value: cond.label }],
+    dimension_profile: { id: PROFILE_CARDS },
+    media,
+  };
+}
+
+/** An existing Whatnot product with this external_id (so a card is never listed twice). */
+async function findProduct(ext: string): Promise<string | null> {
+  let cursor: string | null = null, pages = 0;
+  do {
+    const r = await wn(`/products?limit=50&reverse=true${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+    const hit = ((r?.data ?? []) as { id: string; external_id: string | null }[]).find((p) => p.external_id?.trim().toUpperCase() === ext);
+    if (hit) return hit.id;
+    cursor = r?.next_cursor ?? null;
+  } while (cursor && ++pages < 20);
+  return null;
+}
+
+const firstVariant = async (pid: string): Promise<string | null> => (await wn(`/products/${pid}/variants?limit=5`))?.data?.[0]?.id ?? null;
+
+/**
+ * Make Whatnot match one listing. With the Whatnot switch on and the card live, it is on Whatnot as
+ * Buy It Now at the shop quantity and shop price + 5% (the product is created the first time).
+ * Otherwise its Whatnot stock is 0 and, if the switch is off, it's taken off the Whatnot shop.
+ */
+async function push(id: string): Promise<{ ok: boolean; qty?: number; created?: boolean; error?: string; skipped?: string }> {
+  const { data } = await db.from('shop_listings').select(LISTING_COLS).eq('id', id).maybeSingle();
+  const l = data as Listing | null;
+  if (!l) return { ok: true, skipped: 'gone' };
+  const want = l.whatnot && l.status === 'live' ? Math.max(0, l.quantity) : 0;
+  const done = (fields: Record<string, unknown>) =>
+    db.from('shop_listings').update({ whatnot_dirty: false, whatnot_error: null, ...fields }).eq('id', id).eq('updated_at', l.updated_at);
   try {
+    let pid = l.whatnot_product_id, vid = l.whatnot_variant_id, created = false;
+    if (!vid) {
+      if (!want) {
+        await done({});
+        return { ok: true, skipped: 'not on Whatnot' };
+      }
+      if (l.category !== 'single') throw new Error('Only single cards can go on Whatnot for now');
+      pid = await findProduct(externalId(l));
+      if (!pid) {
+        const body = productBody(l);
+        if (!body.media.length) throw new Error('Add a photo first');
+        pid = String((await wn('/products', body))?.id ?? '');
+        if (!pid) throw new Error('Whatnot did not return a product id');
+        created = true;
+      }
+      vid = await firstVariant(pid);
+      if (!vid) throw new Error('Whatnot product has no variant');
+      // Save the link right away so a retry never makes a second product.
+      const { data: u } = await db.from('shop_listings').update({ whatnot_product_id: pid, whatnot_variant_id: vid }).eq('id', id).select('updated_at').single();
+      if (u?.updated_at) l.updated_at = u.updated_at;
+    }
+    const fields: Record<string, unknown> = {};
+    if (want) {
+      const price = whatnotPrice(l.price);
+      if (created || Number(l.whatnot_price) !== price) {
+        const r = await wn(`/products/${pid}/variants`, { variants: [{ id: vid, price: { amount: String(price), currency: 'USD' } }] }, 'PATCH');
+        if (r?.errors?.length) throw new Error(`Whatnot price: ${r.errors.map((e: { message?: string; code?: string }) => e.message ?? e.code).join(', ')}`);
+        fields.whatnot_price = price;
+      }
+    }
     const r = await wn('/inventory/set', {
-      items: [{ variant_id: l.whatnot_variant_id, quantity: qty, idempotency_key: `${id}-${qty}-${Date.parse(l.updated_at)}` }],
+      items: [{ variant_id: vid, quantity: want, idempotency_key: `${id}-${want}-${Date.parse(l.updated_at)}` }],
     });
     const res = r?.results?.[0];
     if (res && res.status !== 'applied') throw new Error(`Whatnot said ${res.status}${res.warnings?.length ? ` (${res.warnings.join(', ')})` : ''}`);
+    fields.whatnot_synced_qty = res?.new_quantity ?? want;
+    // Publish as Buy It Now when it's new or coming back; take it off the Whatnot shop when switched off.
+    if (want && (created || !l.whatnot_synced_qty)) {
+      await wn(`/merchandising/products/${pid}`, { transaction_type: 'buy_it_now', reserve_for_live: false });
+    } else if (!l.whatnot && l.whatnot_synced_qty) {
+      await wn(`/merchandising/products/${pid}`, { reserve_for_live: true });
+    }
     // Only clear the flag if nothing changed while we were at it.
-    await db.from('shop_listings').update({ whatnot_dirty: false, whatnot_synced_qty: res?.new_quantity ?? qty, whatnot_error: null })
-      .eq('id', id).eq('updated_at', l.updated_at);
-    return { ok: true, qty };
+    await done(fields);
+    return { ok: true, qty: want, created };
   } catch (err) {
     const msg = (err as Error).message.slice(0, 500);
     await db.from('shop_listings').update({ whatnot_error: msg }).eq('id', id).eq('updated_at', l.updated_at);
@@ -189,7 +316,7 @@ async function pushDirty(started: number) {
 async function link(started: number) {
   const recent = new Date(Date.now() - 3 * 86400_000).toISOString();
   const { data: open } = await db.from('shop_listings').select('id, inventory_no')
-    .is('whatnot_variant_id', null).not('inventory_no', 'is', null)
+    .is('whatnot_variant_id', null).not('inventory_no', 'is', null).eq('category', 'single')
     .or(`status.eq.live,updated_at.gte.${recent}`);
   if (!open?.length) return 0;
   const want = new Map(open.map((l) => [String(l.inventory_no).toUpperCase(), l.id as string]));
@@ -209,8 +336,9 @@ async function link(started: number) {
     const v = await wn(`/products/${pid}/variants?limit=5`);
     const vid = v?.data?.[0]?.id;
     if (!vid) continue;
-    // Setting the variant marks it dirty (trigger); pushDirty then makes Whatnot match the shop.
-    const { error } = await db.from('shop_listings').update({ whatnot_product_id: pid, whatnot_variant_id: vid }).eq('id', lid);
+    // A card already on Whatnot has the switch on. Linking marks it dirty (trigger) without a ping;
+    // pushDirty then makes Whatnot match the shop.
+    const { error } = await db.from('shop_listings').update({ whatnot: true, whatnot_product_id: pid, whatnot_variant_id: vid }).eq('id', lid);
     if (error) console.error('whatnot link', lid, error.message);
     else linked++;
   }
