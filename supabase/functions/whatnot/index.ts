@@ -187,7 +187,8 @@ type Listing = {
 };
 const LISTING_COLS = 'id, title, set_name, card_number, variant, category, price, quantity, photos, status, inventory_no, ebay_condition, whatnot, whatnot_product_id, whatnot_variant_id, whatnot_price, whatnot_synced_qty, updated_at';
 
-const externalId = (l: Listing) => (l.inventory_no || l.id.slice(0, 8)).toUpperCase();
+// The Whatnot external_id: the inventory #, else the listing id (as the first bulk listing run did).
+const externalId = (l: Pick<Listing, 'inventory_no' | 'id'>) => (l.inventory_no || l.id).toUpperCase();
 
 function productBody(l: Listing) {
   const num = l.card_number ? (/^[0-9]/.test(l.card_number) ? `#${l.card_number}` : l.card_number) : null;
@@ -202,7 +203,7 @@ function productBody(l: Listing) {
     `Condition: ${cond.label}. ${cond.note}`,
     'The photos are of the exact card you will receive.',
     'Shipped in a sleeve inside a semi-rigid card holder or toploader. Ships within 2 business days.',
-    `Stock # ${externalId(l)}`,
+    l.inventory_no && `Stock # ${l.inventory_no}`,
   ].filter(Boolean).join('\n');
   const media = (l.photos ?? []).filter((p) => /\.jpe?g$/i.test(p) && !/_(m|p|t)\.jpg$/i.test(p)).slice(0, 10)
     .map((p) => ({ url: PHOTO_BASE + p, alt: l.title }));
@@ -316,10 +317,10 @@ async function pushDirty(started: number) {
 async function link(started: number) {
   const recent = new Date(Date.now() - 3 * 86400_000).toISOString();
   const { data: open } = await db.from('shop_listings').select('id, inventory_no')
-    .is('whatnot_variant_id', null).not('inventory_no', 'is', null).eq('category', 'single')
+    .is('whatnot_variant_id', null).eq('category', 'single')
     .or(`status.eq.live,updated_at.gte.${recent}`);
   if (!open?.length) return 0;
-  const want = new Map(open.map((l) => [String(l.inventory_no).toUpperCase(), l.id as string]));
+  const want = new Map(open.map((l) => [externalId(l), l.id as string]));
   const found = new Map<string, string>(); // listing id -> product id
   let cursor: string | null = null, pages = 0;
   do {
