@@ -13,11 +13,18 @@
  *
  * Nothing is written to the ledger: Whatnot payouts are logged by hand per stream.
  *
- * Callers:
- *   x-hub-token (vault shop_sync_token): { action: 'tick' } | { action: 'status' }
+ * The other way: the tick links each live shop listing to its Whatnot product and variant
+ * (external_id = inventory #). When a linked listing's quantity or status changes (sold on the site
+ * or eBay, taken down, restocked) a trigger marks it whatnot_dirty and posts { action: 'push', id },
+ * which sets the Whatnot variant's inventory to the shop quantity (0 unless live). The tick pushes
+ * anything still dirty.
  *
- * Secret: WHATNOT_TOKEN, a Whatnot personal access token (wn_pat_tk_...) with read:orders, made at
- * whatnot.com/dashboard/developer?tab=tokens. Deploy with --no-verify-jwt.
+ * Callers:
+ *   x-hub-token (vault shop_sync_token): { action: 'tick' | 'status' } | { action: 'push', id }
+ *
+ * Secret: WHATNOT_TOKEN, a Whatnot personal access token (wn_pat_tk_...) with read:orders,
+ * read:inventory and write:inventory, made at whatnot.com/dashboard/developer?tab=tokens.
+ * Deploy with --no-verify-jwt.
  */
 
 import { db } from '../_shared/cards.ts';
@@ -58,12 +65,16 @@ class WhatnotError extends Error {
 
 // The API allows 2 requests a second.
 let lastCall = 0;
-async function wn(path: string): Promise<any> {
+async function wn(path: string, body?: unknown): Promise<any> {
   const wait = lastCall + 550 - Date.now();
   if (wait > 0) await sleep(wait);
   for (let attempt = 0; ; attempt++) {
     lastCall = Date.now();
-    const r = await fetch(API + path, { headers: { Authorization: `Bearer ${TOKEN}`, accept: 'application/json' } });
+    const r = await fetch(API + path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, accept: 'application/json', ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     if (r.status === 429 && attempt < 3) {
       await sleep(1500 * (attempt + 1));
       continue;
@@ -134,6 +145,78 @@ async function takeOrder(o: Order): Promise<boolean> {
   return true;
 }
 
+// ---- Shop → Whatnot stock ----
+
+/** Set one listing's Whatnot stock to its shop quantity (0 unless live). */
+async function push(id: string): Promise<{ ok: boolean; qty?: number; error?: string; skipped?: string }> {
+  const { data: l } = await db.from('shop_listings').select('id, quantity, status, whatnot_variant_id, updated_at').eq('id', id).maybeSingle();
+  if (!l?.whatnot_variant_id) return { ok: true, skipped: 'not on Whatnot' };
+  const qty = l.status === 'live' ? Math.max(0, l.quantity) : 0;
+  try {
+    const r = await wn('/inventory/set', {
+      items: [{ variant_id: l.whatnot_variant_id, quantity: qty, idempotency_key: `${id}-${qty}-${Date.parse(l.updated_at)}` }],
+    });
+    const res = r?.results?.[0];
+    if (res && res.status !== 'applied') throw new Error(`Whatnot said ${res.status}${res.warnings?.length ? ` (${res.warnings.join(', ')})` : ''}`);
+    // Only clear the flag if nothing changed while we were at it.
+    await db.from('shop_listings').update({ whatnot_dirty: false, whatnot_synced_qty: res?.new_quantity ?? qty, whatnot_error: null })
+      .eq('id', id).eq('updated_at', l.updated_at);
+    return { ok: true, qty };
+  } catch (err) {
+    const msg = (err as Error).message.slice(0, 500);
+    await db.from('shop_listings').update({ whatnot_error: msg }).eq('id', id).eq('updated_at', l.updated_at);
+    return { ok: false, error: msg };
+  }
+}
+
+async function pushDirty(started: number) {
+  const { data } = await db.from('shop_listings').select('id').eq('whatnot_dirty', true).order('updated_at').limit(40);
+  let pushed = 0, failed = 0;
+  for (const r of data ?? []) {
+    if (Date.now() - started > BUDGET_MS) break;
+    const res = await push(r.id);
+    if (res.ok) pushed++;
+    else failed++;
+  }
+  return { pushed, failed };
+}
+
+/**
+ * Link shop listings to their Whatnot product + variant by inventory # (external_id): live ones, and
+ * ones that changed in the last 3 days (a card that sold on the site just after it was put on
+ * Whatnot still gets linked, and so taken off Whatnot).
+ */
+async function link(started: number) {
+  const recent = new Date(Date.now() - 3 * 86400_000).toISOString();
+  const { data: open } = await db.from('shop_listings').select('id, inventory_no')
+    .is('whatnot_variant_id', null).not('inventory_no', 'is', null)
+    .or(`status.eq.live,updated_at.gte.${recent}`);
+  if (!open?.length) return 0;
+  const want = new Map(open.map((l) => [String(l.inventory_no).toUpperCase(), l.id as string]));
+  const found = new Map<string, string>(); // listing id -> product id
+  let cursor: string | null = null, pages = 0;
+  do {
+    const r = await wn(`/products?limit=50&reverse=true${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+    for (const p of (r?.data ?? []) as { id: string; external_id: string | null }[]) {
+      const lid = p.external_id ? want.get(p.external_id.trim().toUpperCase()) : undefined;
+      if (lid && !found.has(lid)) found.set(lid, p.id);
+    }
+    cursor = r?.next_cursor ?? null;
+  } while (cursor && ++pages < 20 && found.size < want.size && Date.now() - started < BUDGET_MS);
+  let linked = 0;
+  for (const [lid, pid] of found) {
+    if (Date.now() - started > BUDGET_MS) break;
+    const v = await wn(`/products/${pid}/variants?limit=5`);
+    const vid = v?.data?.[0]?.id;
+    if (!vid) continue;
+    // Setting the variant marks it dirty (trigger); pushDirty then makes Whatnot match the shop.
+    const { error } = await db.from('shop_listings').update({ whatnot_product_id: pid, whatnot_variant_id: vid }).eq('id', lid);
+    if (error) console.error('whatnot link', lid, error.message);
+    else linked++;
+  }
+  return linked;
+}
+
 async function tick() {
   const started = Date.now();
   const startedIso = new Date().toISOString();
@@ -184,7 +267,15 @@ async function tick() {
     last_error: null,
     ...(seenAll ? { orders_checked_at: startedIso } : {}),
   }).eq('id', 1);
-  return { ok: true, looked, matched, caught_up: seenAll };
+  let stock: Record<string, unknown> = {};
+  try {
+    const linked = await link(started);
+    stock = { linked, ...(await pushDirty(started)) };
+  } catch (err) {
+    console.error('whatnot stock', (err as Error).message);
+    stock = { stock_error: (err as Error).message.slice(0, 300) };
+  }
+  return { ok: true, looked, matched, caught_up: seenAll, ...stock };
 }
 
 Deno.serve(async (req) => {
@@ -196,6 +287,7 @@ Deno.serve(async (req) => {
   const b = await req.json().catch(() => ({}));
   if (!TOKEN) return json({ skipped: 'WHATNOT_TOKEN not set' });
   if (b.action === 'tick') return json(await tick());
+  if (b.action === 'push' && typeof b.id === 'string') return json(await push(b.id));
   if (b.action === 'status') {
     const { data } = await db.from('whatnot_sync').select('*').eq('id', 1).single();
     return json(data);
